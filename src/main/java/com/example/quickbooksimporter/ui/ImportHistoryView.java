@@ -42,15 +42,15 @@ public class ImportHistoryView extends VerticalLayout {
         add(new H2("Import History & Performance"), summaryRow, analyticsCard);
 
         Grid<ImportRunEntity> runGrid = new Grid<>(ImportRunEntity.class, false);
-        runGrid.addColumn(ImportRunEntity::getId).setHeader("Run ID");
-        runGrid.addColumn(run -> run.getEntityType().name()).setHeader("Entity");
-        runGrid.addColumn(ImportRunEntity::getSourceFileName).setHeader("File");
-        runGrid.addColumn(ImportRunEntity::getStatus).setHeader("Status");
-        runGrid.addColumn(ImportRunEntity::getTotalRows).setHeader("Rows");
-        runGrid.addColumn(ImportRunEntity::getImportedRows).setHeader("Imported");
-        runGrid.addColumn(ImportRunEntity::getCreatedAt).setHeader("Created");
+        runGrid.addColumn(ImportRunEntity::getId).setHeader("Run ID").setAutoWidth(true).setFlexGrow(0);
+        runGrid.addColumn(run -> run.getEntityType().name()).setHeader("Entity").setAutoWidth(true).setFlexGrow(0);
+        runGrid.addColumn(ImportRunEntity::getSourceFileName).setHeader("File").setAutoWidth(true).setFlexGrow(1);
+        runGrid.addColumn(ImportRunEntity::getStatus).setHeader("Status").setAutoWidth(true).setFlexGrow(0);
+        runGrid.addColumn(ImportRunEntity::getTotalRows).setHeader("Rows").setAutoWidth(true).setFlexGrow(0);
+        runGrid.addColumn(ImportRunEntity::getImportedRows).setHeader("Imported").setAutoWidth(true).setFlexGrow(0);
+        runGrid.addColumn(ImportRunEntity::getCreatedAt).setHeader("Created").setAutoWidth(true).setFlexGrow(1);
         runGrid.setItems(runs);
-        runGrid.setWidth("45%");
+        runGrid.setWidthFull();
         runGrid.addClassName("corp-grid");
 
         Grid<ImportRowResultEntity> rowGrid = new Grid<>(ImportRowResultEntity.class, false);
@@ -67,12 +67,14 @@ public class ImportHistoryView extends VerticalLayout {
         });
 
         VerticalLayout detail = UiComponents.card(new H3("Row Results"), rowGrid);
-        detail.setWidth("55%");
+        detail.setWidth("58%");
         detail.setSizeFull();
         VerticalLayout runsCard = UiComponents.card(new H3("Recent Imports"), runGrid);
-        runsCard.setWidth("45%");
+        runsCard.setWidth("42%");
+        runsCard.setMinWidth("480px");
         HorizontalLayout grids = new HorizontalLayout(runsCard, detail);
         grids.setSizeFull();
+        grids.setFlexGrow(0, runsCard);
         grids.setFlexGrow(1, detail);
         add(grids);
     }

@@ -1,0 +1,7 @@
+Customer,PaymentDate,ReferenceNo,PaymentMethod,DepositToAccount,InvoiceNo,AppliedAmount,PaymentAmount
+Atlas Design Studio V2,06/03/2026,PP2-ATLAS-001,Cash,Checking,INV-261101,170.00,170.00
+Atlas Design Studio V2,06/10/2026,PP2-ATLAS-002,Bank Transfer,Checking,INV-261101,250.00,250.00
+Harborline Logistics V2,06/04/2026,PP2-HARBOR-001,Check,Checking,INV-261102,220.00,220.00
+Harborline Logistics V2,06/14/2026,PP2-HARBOR-002,Check,Checking,INV-261102,400.00,400.00
+North Peak Foods V2,06/05/2026,PP2-NPEAK-001,Card,Checking,INV-261103,150.00,150.00
+North Peak Foods V2,06/12/2026,PP2-NPEAK-002,Card,Checking,INV-261103,225.00,225.00

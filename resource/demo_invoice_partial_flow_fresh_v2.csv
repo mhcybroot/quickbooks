@@ -1,0 +1,4 @@
+*InvoiceNo,*Customer,*InvoiceDate,*DueDate,Terms,Location,Memo,Item(Product/Service),ItemDescription,ItemQuantity,ItemRate,*ItemAmount,Taxable,TaxRate,Service Date
+INV-261101,Atlas Design Studio V2,06/01/2026,07/01/2026,Net 30,,Partial payment test invoice v2,Consulting,Brand workshop and design planning v2,2,210.00,420.00,N,0%,06/01/2026
+INV-261102,Harborline Logistics V2,06/01/2026,07/01/2026,Net 30,,Partial payment test invoice v2,Managed Service,Operations support retainer v2,1,620.00,620.00,N,0%,06/01/2026
+INV-261103,North Peak Foods V2,06/01/2026,07/01/2026,Net 30,,Partial payment test invoice v2,Training,POS and staff process training v2,3,125.00,375.00,N,0%,06/01/2026
