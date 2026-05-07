@@ -92,8 +92,7 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
         post(realmId, "/v3/company/" + realmId + "/account",
                 Map.of(
                         "Name", categoryName,
-                        "AccountType", "Expense",
-                        "AccountSubType", "SuppliesMaterialsCogs"));
+                        "AccountType", "Expense"));
     }
 
     @Override
@@ -221,15 +220,10 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
 
     @Override
     public boolean expenseExists(String realmId, String vendorName, LocalDate txnDate, BigDecimal amount, String referenceNo) {
-        if (vendorName == null || txnDate == null || amount == null || referenceNo == null) {
+        if (txnDate == null || amount == null || referenceNo == null) {
             return false;
         }
-        String vendorId = findVendorId(realmId, vendorName);
-        if (vendorId == null) {
-            return false;
-        }
-        String query = "select Id from Purchase where EntityRef = '" + qbLiteral(vendorId) + "'"
-                + " and TxnDate = '" + txnDate + "'"
+        String query = "select Id from Purchase where TxnDate = '" + txnDate + "'"
                 + " and TotalAmt = '" + amount + "'"
                 + " and DocNumber = '" + qbLiteral(referenceNo) + "'";
         QueryResponse response = query(realmId, query);

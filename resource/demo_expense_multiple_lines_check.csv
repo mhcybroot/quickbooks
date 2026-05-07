@@ -1,0 +1,4 @@
+Vendor,TxnDate,ReferenceNo,PaymentAccount,Category,Description,Amount,Billable,Tax,Customer
+Atlas Internet Services,05/13/2026,EXP-MULTI-001,Checking,Utilities,Business internet subscription,89.99,N,No,
+Atlas Internet Services,05/13/2026,EXP-MULTI-001,Checking,Software,Team collaboration subscription,49.00,N,No,
+Atlas Internet Services,05/13/2026,EXP-MULTI-001,Checking,Office Expenses,Printer paper and stationery,23.75,N,No,
