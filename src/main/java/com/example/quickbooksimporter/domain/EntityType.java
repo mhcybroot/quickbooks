@@ -2,5 +2,6 @@ package com.example.quickbooksimporter.domain;
 
 public enum EntityType {
     INVOICE,
-    PAYMENT
+    PAYMENT,
+    EXPENSE
 }

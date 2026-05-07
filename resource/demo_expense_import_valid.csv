@@ -1,0 +1,6 @@
+Vendor,TxnDate,ReferenceNo,PaymentAccount,Category,Description,Amount
+City Fuel Supplies,05/08/2026,EXP-260801,Checking,Supplies,Office cleaning and pantry supplies,185.50
+Northwind Electric,05/09/2026,EXP-260802,Checking,Utilities,Monthly electricity bill,420.00
+Rapid Courier BD,05/10/2026,EXP-260803,Checking,Shipping,Client document courier costs,96.75
+Vertex Workspace,05/11/2026,EXP-260804,Checking,Rent or Lease,Shared office rent allocation,1250.00
+Atlas Internet Services,05/12/2026,EXP-260805,Checking,Utilities,Business internet subscription,89.99

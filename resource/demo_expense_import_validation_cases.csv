@@ -1,0 +1,15 @@
+Vendor,TxnDate,ReferenceNo,PaymentAccount,Category,Description,Amount
+City Fuel Supplies,05/08/2026,EXP-CASE-0001,Checking,Supplies,Valid control row,185.50
+,05/08/2026,EXP-CASE-0002,Checking,Supplies,Missing vendor,120.00
+Northwind Electric,,EXP-CASE-0003,Checking,Utilities,Missing transaction date,220.00
+Rapid Courier BD,05/10/2026,EXP-CASE-0004,,Shipping,Missing payment account,75.00
+Vertex Workspace,05/11/2026,EXP-CASE-0005,Checking,,Missing category,310.00
+Atlas Internet Services,05/12/2026,EXP-CASE-0006,Checking,Utilities,Missing amount,
+City Fuel Supplies,05/08/2026,EXP-CASE-0007,Checking,Supplies,Zero amount,0
+City Fuel Supplies,05/08/2026,EXP-CASE-0008,Checking,Supplies,Negative amount,-12.00
+City Fuel Supplies,05/08/2026,EXP-CASE-0009,Checking,Supplies,Invalid amount format,ABCD
+City Fuel Supplies,2026-05-08,EXP-CASE-0010,Checking,Supplies,ISO date format valid,99.95
+City Fuel Supplies,05/08/2026,EXP-CASE-0011,Unknown Bank,Supplies,Unknown payment account should fail,80.00
+City Fuel Supplies,05/08/2026,EXP-CASE-0012,Checking,New Category AutoCreate,Category should auto-create,77.25
+City Fuel Supplies,05/08/2026,EXP-CASE-0013,Checking,Supplies,Duplicate check candidate A,185.50
+City Fuel Supplies,05/08/2026,EXP-CASE-0013,Checking,Supplies,Duplicate check candidate B,185.50

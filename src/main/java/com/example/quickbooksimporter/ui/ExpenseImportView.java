@@ -1,0 +1,207 @@
+package com.example.quickbooksimporter.ui;
+
+import com.example.quickbooksimporter.domain.ExpenseImportPreview;
+import com.example.quickbooksimporter.domain.ExpenseImportPreviewRow;
+import com.example.quickbooksimporter.domain.ImportRowStatus;
+import com.example.quickbooksimporter.domain.NormalizedExpenseField;
+import com.example.quickbooksimporter.service.ExpenseImportService;
+import com.example.quickbooksimporter.service.ExpenseMappingProfileService;
+import com.example.quickbooksimporter.service.ImportExecutionResult;
+import com.example.quickbooksimporter.service.InvoiceCsvParser;
+import com.example.quickbooksimporter.service.MappingProfileSummary;
+import com.example.quickbooksimporter.service.ParsedCsvDocument;
+import com.example.quickbooksimporter.ui.components.UiComponents;
+import com.vaadin.flow.component.button.Button;
+import com.vaadin.flow.component.combobox.ComboBox;
+import com.vaadin.flow.component.formlayout.FormLayout;
+import com.vaadin.flow.component.grid.Grid;
+import com.vaadin.flow.component.html.H2;
+import com.vaadin.flow.component.html.H3;
+import com.vaadin.flow.component.html.Paragraph;
+import com.vaadin.flow.component.notification.Notification;
+import com.vaadin.flow.component.notification.NotificationVariant;
+import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
+import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.component.textfield.TextField;
+import com.vaadin.flow.component.upload.Upload;
+import com.vaadin.flow.component.upload.receivers.MemoryBuffer;
+import com.vaadin.flow.router.PageTitle;
+import com.vaadin.flow.router.Route;
+import jakarta.annotation.security.PermitAll;
+import java.io.IOException;
+import java.util.EnumMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+
+@Route(value = "expenses", layout = MainLayout.class)
+@PageTitle("Expense Import")
+@PermitAll
+public class ExpenseImportView extends VerticalLayout {
+
+    private final InvoiceCsvParser parser;
+    private final ExpenseMappingProfileService mappingProfileService;
+    private final ExpenseImportService expenseImportService;
+
+    private final MemoryBuffer uploadBuffer = new MemoryBuffer();
+    private final Upload upload = new Upload(uploadBuffer);
+    private final ComboBox<MappingProfileSummary> savedProfiles = new ComboBox<>("Saved Expense Mapping Profiles");
+    private final TextField profileName = new TextField("New Profile Name");
+    private final FormLayout mappingForm = new FormLayout();
+    private final Grid<ExpenseImportPreviewRow> previewGrid = new Grid<>(ExpenseImportPreviewRow.class, false);
+    private final Paragraph summary = new Paragraph("Upload an expense CSV to begin.");
+
+    private final Map<NormalizedExpenseField, ComboBox<String>> fieldSelectors = new EnumMap<>(NormalizedExpenseField.class);
+
+    private byte[] uploadedBytes;
+    private String uploadedFileName;
+    private List<String> currentHeaders = List.of();
+    private ExpenseImportPreview currentPreview;
+
+    public ExpenseImportView(InvoiceCsvParser parser,
+                             ExpenseMappingProfileService mappingProfileService,
+                             ExpenseImportService expenseImportService) {
+        this.parser = parser;
+        this.mappingProfileService = mappingProfileService;
+        this.expenseImportService = expenseImportService;
+        addClassName("corp-page");
+        setSizeFull();
+        add(new H2("Expense Import"),
+                new Paragraph("Upload, map, validate, and import expense transactions into QuickBooks."));
+        configureUpload();
+        configureProfiles();
+        configureMappingForm();
+        configurePreviewGrid();
+        configureActions();
+    }
+
+    private void configureUpload() {
+        upload.setAcceptedFileTypes(".csv");
+        upload.addSucceededListener(event -> {
+            uploadedFileName = event.getFileName();
+            try {
+                uploadedBytes = uploadBuffer.getInputStream().readAllBytes();
+            } catch (IOException exception) {
+                throw new IllegalStateException(exception);
+            }
+            ParsedCsvDocument document = parser.parse(new java.io.ByteArrayInputStream(uploadedBytes));
+            currentHeaders = document.headers();
+            Map<NormalizedExpenseField, String> defaults = mappingProfileService.defaultExpenseMapping(currentHeaders);
+            fieldSelectors.forEach((field, selector) -> {
+                selector.setItems(currentHeaders);
+                selector.setValue(defaults.get(field));
+            });
+            summary.setText("Loaded " + uploadedFileName + " with " + document.rows().size() + " data rows.");
+        });
+        add(UiComponents.card(UiComponents.sectionTitle("Stage 1: Upload CSV"), upload));
+    }
+
+    private void configureProfiles() {
+        savedProfiles.setItems(mappingProfileService.listProfiles());
+        savedProfiles.setItemLabelGenerator(MappingProfileSummary::name);
+        savedProfiles.addValueChangeListener(event -> {
+            if (event.getValue() == null || currentHeaders.isEmpty()) {
+                return;
+            }
+            Map<NormalizedExpenseField, String> mapping = mappingProfileService.loadProfile(event.getValue().id());
+            fieldSelectors.forEach((field, selector) -> {
+                selector.setItems(currentHeaders);
+                selector.setValue(mapping.get(field));
+            });
+        });
+        HorizontalLayout profileRow = new HorizontalLayout(savedProfiles, profileName);
+        profileRow.setWidthFull();
+        profileRow.expand(savedProfiles, profileName);
+        add(UiComponents.card(UiComponents.sectionTitle("Stage 2: Mapping Profile"), profileRow));
+    }
+
+    private void configureMappingForm() {
+        mappingForm.setResponsiveSteps(new FormLayout.ResponsiveStep("0", 1), new FormLayout.ResponsiveStep("800px", 2));
+        for (NormalizedExpenseField field : NormalizedExpenseField.values()) {
+            ComboBox<String> selector = new ComboBox<>(field.name());
+            selector.setWidthFull();
+            selector.setPlaceholder(field.sampleHeader());
+            fieldSelectors.put(field, selector);
+            mappingForm.add(selector);
+        }
+        add(UiComponents.card(new H3("Stage 3: Column Mapping"), mappingForm));
+    }
+
+    private void configurePreviewGrid() {
+        previewGrid.addColumn(ExpenseImportPreviewRow::rowNumber).setHeader("Row");
+        previewGrid.addColumn(ExpenseImportPreviewRow::vendor).setHeader("Vendor");
+        previewGrid.addColumn(ExpenseImportPreviewRow::category).setHeader("Category");
+        previewGrid.addColumn(ExpenseImportPreviewRow::referenceNo).setHeader("Reference #");
+        previewGrid.addColumn(ExpenseImportPreviewRow::status).setHeader("Status");
+        previewGrid.addColumn(ExpenseImportPreviewRow::message).setHeader("Message").setAutoWidth(true).setFlexGrow(1);
+        previewGrid.setHeight("360px");
+        previewGrid.addClassName("corp-grid");
+        add(UiComponents.card(new H3("Stage 4: Validation Preview"), summary, previewGrid));
+    }
+
+    private void configureActions() {
+        Button previewButton = new Button("Preview & Validate", event -> previewImport());
+        Button saveProfileButton = new Button("Save Mapping Profile", event -> saveProfile());
+        Button importButton = new Button("Import Expenses", event -> importPreview());
+        previewButton.addThemeName("primary");
+        importButton.addThemeName("primary");
+        HorizontalLayout actions = new HorizontalLayout(previewButton, saveProfileButton, importButton);
+        actions.addClassName("corp-action-bar");
+        add(UiComponents.card(UiComponents.sectionTitle("Stage 5: Execute"), actions));
+    }
+
+    private void previewImport() {
+        if (uploadedBytes == null) {
+            notifyWarning("Upload a CSV file first.");
+            return;
+        }
+        currentPreview = expenseImportService.preview(uploadedFileName, uploadedBytes, currentMapping());
+        previewGrid.setItems(currentPreview.rows());
+        long readyCount = currentPreview.rows().stream().filter(row -> row.status() == ImportRowStatus.READY).count();
+        long invalidCount = currentPreview.rows().stream().filter(row -> row.status() == ImportRowStatus.INVALID).count();
+        summary.setText("Preview complete: " + readyCount + " ready, " + invalidCount + " invalid.");
+    }
+
+    private void saveProfile() {
+        if (profileName.isEmpty()) {
+            notifyWarning("Enter a profile name first.");
+            return;
+        }
+        mappingProfileService.saveProfile(profileName.getValue(), currentMapping());
+        savedProfiles.setItems(mappingProfileService.listProfiles());
+        notifySuccess("Expense mapping profile saved.");
+    }
+
+    private void importPreview() {
+        if (currentPreview == null) {
+            notifyWarning("Run preview first.");
+            return;
+        }
+        ImportExecutionResult result = expenseImportService.execute(
+                uploadedFileName,
+                savedProfiles.getOptionalValue().map(MappingProfileSummary::name).orElse(profileName.getValue()),
+                currentPreview);
+        if (result.success()) {
+            notifySuccess(result.message());
+        } else {
+            notifyWarning(result.message());
+        }
+        summary.setText(result.message());
+    }
+
+    private Map<NormalizedExpenseField, String> currentMapping() {
+        Map<NormalizedExpenseField, String> mapping = new EnumMap<>(NormalizedExpenseField.class);
+        fieldSelectors.forEach((field, selector) -> mapping.put(field, selector.getValue()));
+        return mapping;
+    }
+
+    private void notifySuccess(String message) {
+        Notification notification = Notification.show(Objects.requireNonNull(message));
+        notification.addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+    }
+
+    private void notifyWarning(String message) {
+        Notification notification = Notification.show(Objects.requireNonNull(message));
+        notification.addThemeVariants(NotificationVariant.LUMO_WARNING);
+    }
+}
