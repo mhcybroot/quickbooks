@@ -4,6 +4,7 @@ import com.example.quickbooksimporter.service.QuickBooksConnectionService;
 import com.example.quickbooksimporter.service.QuickBooksConnectionStatus;
 import com.example.quickbooksimporter.service.QuickBooksGateway;
 import com.example.quickbooksimporter.service.QuickBooksIncomeAccount;
+import com.example.quickbooksimporter.ui.components.UiComponents;
 import com.vaadin.flow.component.Text;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.grid.Grid;
@@ -12,6 +13,7 @@ import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.H3;
 import com.vaadin.flow.component.html.Paragraph;
 import com.vaadin.flow.component.notification.Notification;
+import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
@@ -25,26 +27,28 @@ public class SettingsView extends VerticalLayout {
 
     public SettingsView(QuickBooksConnectionService connectionService, QuickBooksGateway quickBooksGateway) {
         QuickBooksConnectionStatus status = connectionService.getStatus();
+        addClassName("corp-page");
         setSpacing(true);
         add(new H2("QuickBooks Online Connection"));
-        if (status.connected()) {
-            add(new Paragraph("Connected to realm " + status.realmId()));
-            add(new Paragraph("Environment: " + status.environment()));
-            add(new Paragraph("Token expires at: " + status.expiresAt()));
-        } else {
-            add(new Paragraph("No QuickBooks company connected yet."));
-        }
 
         Anchor connect = new Anchor("/oauth/quickbooks/connect", "");
         connect.getElement().setAttribute("router-ignore", true);
         connect.add(new Button("Connect QuickBooks"));
-        add(connect, new Text("Use your Intuit app credentials in application properties or environment variables."));
+        HorizontalLayout connectionRow = new HorizontalLayout(
+                UiComponents.kpi("Connection", status.connected() ? "Active" : "Not Connected",
+                        status.connected() ? "Realm " + status.realmId() : "Connect your QuickBooks sandbox/company"),
+                UiComponents.kpi("Environment", status.environment().toUpperCase(),
+                        status.expiresAt() == null ? "Token unavailable" : "Token expires at " + status.expiresAt()));
+        connectionRow.setWidthFull();
+        connectionRow.setFlexGrow(1);
+        add(connectionRow, connect, new Text("Use your Intuit app credentials in application properties or environment variables."));
 
         Grid<QuickBooksIncomeAccount> accountsGrid = new Grid<>(QuickBooksIncomeAccount.class, false);
         accountsGrid.addColumn(QuickBooksIncomeAccount::id).setHeader("Account ID").setAutoWidth(true);
         accountsGrid.addColumn(QuickBooksIncomeAccount::name).setHeader("Name").setAutoWidth(true).setFlexGrow(1);
         accountsGrid.addColumn(QuickBooksIncomeAccount::accountSubType).setHeader("Sub Type").setAutoWidth(true);
         accountsGrid.setHeight("320px");
+        accountsGrid.addClassName("corp-grid");
 
         Button loadAccounts = new Button("Load Income Accounts", event -> {
             if (!status.connected()) {
@@ -59,10 +63,11 @@ public class SettingsView extends VerticalLayout {
                 Notification.show("Unable to load income accounts: " + exception.getMessage());
             }
         });
+        loadAccounts.addThemeName("primary");
 
-        add(new H3("Find QB_SERVICE_ITEM_INCOME_ACCOUNT_ID"),
+        add(UiComponents.card(new H3("Find QB_SERVICE_ITEM_INCOME_ACCOUNT_ID"),
                 new Paragraph("Click Load Income Accounts, then copy an Account ID and set it in app.quickbooks.service-item-income-account-id."),
                 loadAccounts,
-                accountsGrid);
+                accountsGrid));
     }
 }

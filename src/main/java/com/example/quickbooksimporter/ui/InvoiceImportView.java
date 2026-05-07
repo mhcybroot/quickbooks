@@ -10,7 +10,7 @@ import com.example.quickbooksimporter.service.InvoiceCsvParser;
 import com.example.quickbooksimporter.service.InvoiceImportService;
 import com.example.quickbooksimporter.service.MappingProfileSummary;
 import com.example.quickbooksimporter.service.ParsedCsvDocument;
-import com.vaadin.flow.component.Text;
+import com.example.quickbooksimporter.ui.components.UiComponents;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.formlayout.FormLayout;
@@ -20,6 +20,7 @@ import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.H3;
 import com.vaadin.flow.component.html.Paragraph;
 import com.vaadin.flow.component.notification.Notification;
+import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.TextField;
@@ -34,6 +35,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @Route(value = "", layout = MainLayout.class)
 @PageTitle("Invoice Import")
@@ -52,6 +54,10 @@ public class InvoiceImportView extends VerticalLayout {
     private final Grid<ImportPreviewRow> previewGrid = new Grid<>(ImportPreviewRow.class, false);
     private final Paragraph summary = new Paragraph("Upload a CSV to begin.");
     private final Anchor downloadAnchor = new Anchor();
+    private final HorizontalLayout kpiRow = new HorizontalLayout();
+    private final VerticalLayout kpiTotal = UiComponents.softCard();
+    private final VerticalLayout kpiReady = UiComponents.softCard();
+    private final VerticalLayout kpiInvalid = UiComponents.softCard();
 
     private final Map<NormalizedInvoiceField, ComboBox<String>> fieldSelectors = new EnumMap<>(NormalizedInvoiceField.class);
 
@@ -68,7 +74,10 @@ public class InvoiceImportView extends VerticalLayout {
         this.invoiceImportService = invoiceImportService;
 
         setSizeFull();
-        add(new H2("Invoice CSV Import"), new Text("Upload, map, validate, export, then import into QuickBooks."));
+        addClassName("corp-page");
+        add(new H2("Invoice Import Workspace"),
+                new Paragraph("Upload, map, validate, export, and import invoices in a controlled corporate workflow."));
+        configureKpis();
         configureUpload();
         configureProfiles();
         configureMappingForm();
@@ -78,6 +87,7 @@ public class InvoiceImportView extends VerticalLayout {
 
     private void configureUpload() {
         upload.setAcceptedFileTypes(".csv");
+        upload.addClassName("corp-card-soft");
         upload.addSucceededListener(event -> {
             uploadedFileName = event.getFileName();
             try {
@@ -93,8 +103,9 @@ public class InvoiceImportView extends VerticalLayout {
                 selector.setValue(defaults.get(field));
             });
             summary.setText("Loaded " + uploadedFileName + " with " + document.rows().size() + " data rows.");
+            refreshKpis(document.rows().size(), 0, 0);
         });
-        add(upload);
+        add(UiComponents.card(UiComponents.sectionTitle("Stage 1: Upload CSV"), upload));
     }
 
     private void configureProfiles() {
@@ -110,7 +121,10 @@ public class InvoiceImportView extends VerticalLayout {
                 selector.setValue(mapping.get(field));
             });
         });
-        add(new HorizontalLayout(savedProfiles, profileName));
+        HorizontalLayout profileRow = new HorizontalLayout(savedProfiles, profileName);
+        profileRow.setWidthFull();
+        profileRow.expand(savedProfiles, profileName);
+        add(UiComponents.card(UiComponents.sectionTitle("Stage 2: Mapping Profile"), profileRow));
     }
 
     private void configureMappingForm() {
@@ -122,7 +136,7 @@ public class InvoiceImportView extends VerticalLayout {
             fieldSelectors.put(field, selector);
             mappingForm.add(selector);
         }
-        add(new H3("Column Mapping"), mappingForm);
+        add(UiComponents.card(new H3("Stage 3: Column Mapping"), mappingForm));
     }
 
     private void configurePreviewGrid() {
@@ -133,22 +147,36 @@ public class InvoiceImportView extends VerticalLayout {
         previewGrid.addColumn(ImportPreviewRow::status).setHeader("Status");
         previewGrid.addColumn(ImportPreviewRow::message).setHeader("Message").setAutoWidth(true).setFlexGrow(1);
         previewGrid.setHeight("360px");
-        add(summary, previewGrid);
+        previewGrid.addClassName("corp-grid");
+        add(UiComponents.card(new H3("Stage 4: Validation Preview"), summary, previewGrid));
     }
 
     private void configureActions() {
         Button previewButton = new Button("Preview & Validate", event -> previewImport());
         Button saveProfileButton = new Button("Save Mapping Profile", event -> saveProfile());
         Button importButton = new Button("Import to QuickBooks", event -> importPreview());
+        previewButton.addThemeName("primary");
+        importButton.addThemeName("primary");
         downloadAnchor.setText("Download normalized CSV");
         downloadAnchor.setVisible(false);
 
-        add(new HorizontalLayout(previewButton, saveProfileButton, importButton), downloadAnchor);
+        HorizontalLayout actions = new HorizontalLayout(previewButton, saveProfileButton, importButton, downloadAnchor);
+        actions.addClassName("corp-action-bar");
+        add(UiComponents.card(UiComponents.sectionTitle("Stage 5: Execute"), actions));
+    }
+
+    private void configureKpis() {
+        kpiRow.setWidthFull();
+        kpiRow.setSpacing(true);
+        kpiRow.add(kpiTotal, kpiReady, kpiInvalid);
+        kpiRow.setFlexGrow(1, kpiTotal, kpiReady, kpiInvalid);
+        refreshKpis(0, 0, 0);
+        add(kpiRow);
     }
 
     private void previewImport() {
         if (uploadedBytes == null) {
-            Notification.show("Upload a CSV file first.");
+            notifyWarning("Upload a CSV file first.");
             return;
         }
         currentPreview = invoiceImportService.preview(uploadedFileName, uploadedBytes, currentMapping());
@@ -156,6 +184,7 @@ public class InvoiceImportView extends VerticalLayout {
         long readyCount = currentPreview.rows().stream().filter(row -> row.status() == ImportRowStatus.READY).count();
         long invalidCount = currentPreview.rows().stream().filter(row -> row.status() == ImportRowStatus.INVALID).count();
         summary.setText("Preview complete: " + readyCount + " ready, " + invalidCount + " invalid.");
+        refreshKpis(currentPreview.rows().size(), (int) readyCount, (int) invalidCount);
         downloadAnchor.setHref(new StreamResource("normalized-" + uploadedFileName,
                 () -> new java.io.ByteArrayInputStream(currentPreview.exportCsv().getBytes(StandardCharsets.UTF_8))));
         downloadAnchor.setVisible(true);
@@ -163,24 +192,28 @@ public class InvoiceImportView extends VerticalLayout {
 
     private void saveProfile() {
         if (profileName.isEmpty()) {
-            Notification.show("Enter a profile name first.");
+            notifyWarning("Enter a profile name first.");
             return;
         }
         mappingProfileService.saveProfile(profileName.getValue(), currentMapping());
         savedProfiles.setItems(mappingProfileService.listProfiles());
-        Notification.show("Mapping profile saved.");
+        notifySuccess("Mapping profile saved.");
     }
 
     private void importPreview() {
         if (currentPreview == null) {
-            Notification.show("Run preview first.");
+            notifyWarning("Run preview first.");
             return;
         }
         ImportExecutionResult result = invoiceImportService.execute(
                 uploadedFileName,
                 savedProfiles.getOptionalValue().map(MappingProfileSummary::name).orElse(profileName.getValue()),
                 currentPreview);
-        Notification.show(result.message());
+        if (result.success()) {
+            notifySuccess(result.message());
+        } else {
+            notifyWarning(result.message());
+        }
         summary.setText(result.message());
     }
 
@@ -188,5 +221,24 @@ public class InvoiceImportView extends VerticalLayout {
         Map<NormalizedInvoiceField, String> mapping = new EnumMap<>(NormalizedInvoiceField.class);
         fieldSelectors.forEach((field, selector) -> mapping.put(field, selector.getValue()));
         return mapping;
+    }
+
+    private void refreshKpis(int totalRows, int readyRows, int invalidRows) {
+        kpiTotal.removeAll();
+        kpiReady.removeAll();
+        kpiInvalid.removeAll();
+        kpiTotal.add(UiComponents.kpi("Total Rows", String.valueOf(totalRows), "Rows detected in the active file"));
+        kpiReady.add(UiComponents.kpi("Ready", String.valueOf(readyRows), "Rows passing validation"));
+        kpiInvalid.add(UiComponents.kpi("Invalid", String.valueOf(invalidRows), "Rows requiring fixes"));
+    }
+
+    private void notifySuccess(String message) {
+        Notification notification = Notification.show(Objects.requireNonNull(message));
+        notification.addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+    }
+
+    private void notifyWarning(String message) {
+        Notification notification = Notification.show(Objects.requireNonNull(message));
+        notification.addThemeVariants(NotificationVariant.LUMO_WARNING);
     }
 }
