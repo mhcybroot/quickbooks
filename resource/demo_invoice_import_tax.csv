@@ -1,0 +1,6 @@
+*InvoiceNo,*Customer,*InvoiceDate,*DueDate,Terms,Location,Memo,Item(Product/Service),ItemDescription,ItemQuantity,ItemRate,*ItemAmount,Taxable,TaxRate,Service Date
+INV-260501,Acme Interiors,05/01/26,05/31/26,Net 30,,Office furniture setup,Consulting,Initial onsite consultation,2,125,250,N,0%,05/01/26
+INV-260503,Northwind Traders,05/03/26,06/02/26,Net 30,,Monthly service,Managed Service,Tier 1 support package,1,499,499,N,0%,05/03/26
+INV-260504,Blue Harbor Cafe,05/04/26,06/03/26,Net 30,,POS setup,Hardware Setup,POS terminal setup and test,3,120,360,N,0%,05/04/26
+INV-260505,Blue Harbor Cafe,05/04/26,06/03/26,Net 30,,POS setup,Training,Staff onboarding session,2,90,180,N,0%,05/04/26
+INV-260506,Summit Health Group,05/05/26,06/04/26,Net 30,,Audit prep,Data Review,Claims data review service,5,70,350,N,0%,05/05/26
