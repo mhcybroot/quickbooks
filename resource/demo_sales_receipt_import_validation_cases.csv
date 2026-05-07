@@ -1,0 +1,12 @@
+ReceiptNo,Customer,TxnDate,PaymentMethod,DepositAccount,Item,Description,Quantity,Rate,Amount,Taxable,TaxCode,TaxRate
+SR-CASE-0001,Acme Interiors,05/16/2026,Cash,Checking,Consulting,Valid control row,1,100.00,100.00,N,NON,0
+,Acme Interiors,05/16/2026,Cash,Checking,Consulting,Missing receipt no,1,100.00,100.00,N,NON,0
+SR-CASE-0003,,05/16/2026,Cash,Checking,Consulting,Missing customer,1,100.00,100.00,N,NON,0
+SR-CASE-0004,Acme Interiors,,Cash,Checking,Consulting,Missing date,1,100.00,100.00,N,NON,0
+SR-CASE-0005,Acme Interiors,05/16/2026,Cash,,Consulting,Missing deposit account,1,100.00,100.00,N,NON,0
+SR-CASE-0006,Acme Interiors,05/16/2026,Cash,Checking,,Missing item,1,100.00,100.00,N,NON,0
+SR-CASE-0007,Acme Interiors,05/16/2026,Cash,Checking,Consulting,Zero amount,1,0,0,N,NON,0
+SR-CASE-0008,Acme Interiors,05/16/2026,Cash,Checking,Consulting,Taxable without code,1,100.00,100.00,Y,,5
+SR-CASE-0009,Acme Interiors,05/16/2026,Cash,Checking,Consulting,Taxable bad code,1,100.00,100.00,Y,UNKNOWN_CODE,5
+SR-CASE-0010,Acme Interiors,05/16/2026,Cash,Checking,Consulting,Group mismatch row A,1,100.00,100.00,N,NON,0
+SR-CASE-0010,Blue Harbor Cafe,05/16/2026,Cash,Checking,Consulting,Group mismatch row B,1,50.00,50.00,N,NON,0

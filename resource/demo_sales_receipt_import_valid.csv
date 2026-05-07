@@ -1,0 +1,4 @@
+ReceiptNo,Customer,TxnDate,PaymentMethod,DepositAccount,Item,Description,Quantity,Rate,Amount,Taxable,TaxCode,TaxRate
+SR-260801,Acme Interiors,05/14/2026,Cash,Checking,Consulting,Design workshop session,1,250.00,250.00,N,NON,0
+SR-260801,Acme Interiors,05/14/2026,Cash,Checking,Installation,Onsite install support,2,85.00,170.00,N,NON,0
+SR-260802,Blue Harbor Cafe,05/15/2026,Card,Checking,Training,Staff onboarding package,1,180.00,180.00,N,NON,0

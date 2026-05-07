@@ -42,6 +42,7 @@ public class MainLayout extends AppLayout {
 
         SideNav nav = new SideNav();
         nav.addItem(new SideNavItem("Invoice Import", InvoiceImportView.class, VaadinIcon.UPLOAD.create()));
+        nav.addItem(new SideNavItem("Sales Receipt Import", SalesReceiptImportView.class, VaadinIcon.CART.create()));
         nav.addItem(new SideNavItem("Receive Payments", PaymentImportView.class, VaadinIcon.MONEY_DEPOSIT.create()));
         nav.addItem(new SideNavItem("Expense Import", ExpenseImportView.class, VaadinIcon.CREDIT_CARD.create()));
         nav.addItem(new SideNavItem("QuickBooks Settings", SettingsView.class, VaadinIcon.COG.create()));

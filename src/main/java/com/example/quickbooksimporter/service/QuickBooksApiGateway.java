@@ -5,6 +5,8 @@ import com.example.quickbooksimporter.domain.InvoiceLine;
 import com.example.quickbooksimporter.domain.NormalizedExpense;
 import com.example.quickbooksimporter.domain.NormalizedInvoice;
 import com.example.quickbooksimporter.domain.NormalizedPayment;
+import com.example.quickbooksimporter.domain.NormalizedSalesReceipt;
+import com.example.quickbooksimporter.domain.SalesReceiptLine;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import java.math.BigDecimal;
 import java.net.URI;
@@ -66,6 +68,14 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
     }
 
     @Override
+    public boolean customerExists(String realmId, String customerName) {
+        if (customerName == null) {
+            return false;
+        }
+        return findCustomerId(realmId, customerName) != null;
+    }
+
+    @Override
     public void ensureVendor(String realmId, String vendorName) {
         if (vendorName == null) {
             return;
@@ -93,6 +103,16 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
                 Map.of(
                         "Name", categoryName,
                         "AccountType", "Expense"));
+    }
+
+    @Override
+    public boolean taxCodeExists(String realmId, String taxCodeName) {
+        if (taxCodeName == null) {
+            return false;
+        }
+        String query = "select Id from TaxCode where Name = '" + qbLiteral(taxCodeName) + "'";
+        QueryResponse response = query(realmId, query);
+        return response.queryResponse() != null && response.queryResponse().containsKey("TaxCode");
     }
 
     @Override
@@ -261,6 +281,83 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
         return new QuickBooksExpenseCreateResult(response.purchase().id(), response.purchase().docNumber());
     }
 
+    @Override
+    public boolean salesReceiptExistsByDocNumber(String realmId, String docNumber) {
+        if (docNumber == null) {
+            return false;
+        }
+        QueryResponse response = query(realmId, "select Id from SalesReceipt where DocNumber = '" + qbLiteral(docNumber) + "'");
+        return response.queryResponse() != null && response.queryResponse().containsKey("SalesReceipt");
+    }
+
+    @Override
+    public void ensurePaymentMethod(String realmId, String paymentMethodName) {
+        if (StringUtils.isBlank(paymentMethodName)) {
+            return;
+        }
+        String existing = findPaymentMethodIdByName(realmId, paymentMethodName);
+        if (existing != null) {
+            return;
+        }
+        post(realmId, "/v3/company/" + realmId + "/paymentmethod",
+                Map.of("Name", paymentMethodName, "Type", "NON_CREDIT_CARD"));
+    }
+
+    @Override
+    public QuickBooksSalesReceiptCreateResult createSalesReceipt(String realmId, NormalizedSalesReceipt receipt) {
+        String customerId = findCustomerId(realmId, receipt.customer());
+        if (customerId == null) {
+            throw new IllegalStateException("Customer not found in QuickBooks: " + receipt.customer());
+        }
+        String depositAccountId = findAccountIdByName(realmId, receipt.depositAccount());
+        if (depositAccountId == null) {
+            throw new IllegalStateException("Deposit account not found in QuickBooks: " + receipt.depositAccount());
+        }
+
+        java.util.List<java.util.Map<String, Object>> lines = new java.util.ArrayList<>();
+        for (SalesReceiptLine line : receipt.lines()) {
+            String itemId = findItemId(realmId, line.itemName());
+            if (itemId == null) {
+                throw new IllegalStateException("Item not found in QuickBooks: " + line.itemName());
+            }
+            java.util.Map<String, Object> detail = new java.util.LinkedHashMap<>();
+            detail.put("ItemRef", Map.of("value", itemId));
+            detail.put("Qty", line.quantity());
+            if (line.rate() != null) {
+                detail.put("UnitPrice", line.rate());
+            } else if (line.amount() != null && line.quantity() != null && line.quantity().signum() != 0) {
+                detail.put("UnitPrice", line.amount().divide(line.quantity(), 6, java.math.RoundingMode.HALF_UP));
+            }
+            if (line.taxable() && !StringUtils.isBlank(line.taxCode())) {
+                String taxCodeId = findTaxCodeIdByName(realmId, line.taxCode());
+                if (taxCodeId == null) {
+                    throw new IllegalStateException("Tax code not found in QuickBooks: " + line.taxCode());
+                }
+                detail.put("TaxCodeRef", Map.of("value", taxCodeId));
+            }
+            lines.add(Map.of(
+                    "Amount", line.amount(),
+                    "Description", line.description() == null ? "" : line.description(),
+                    "DetailType", "SalesItemLineDetail",
+                    "SalesItemLineDetail", detail));
+        }
+
+        java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("DocNumber", receipt.receiptNo());
+        payload.put("TxnDate", String.valueOf(receipt.txnDate()));
+        payload.put("CustomerRef", Map.of("value", customerId));
+        payload.put("DepositToAccountRef", Map.of("value", depositAccountId));
+        payload.put("Line", lines);
+        if (!StringUtils.isBlank(receipt.paymentMethod())) {
+            String methodId = findPaymentMethodIdByName(realmId, receipt.paymentMethod());
+            if (methodId != null) {
+                payload.put("PaymentMethodRef", Map.of("value", methodId));
+            }
+        }
+        SalesReceiptResponse response = post(realmId, "/v3/company/" + realmId + "/salesreceipt", payload, SalesReceiptResponse.class);
+        return new QuickBooksSalesReceiptCreateResult(response.salesReceipt().id(), response.salesReceipt().docNumber());
+    }
+
     private Map<String, Object> findCustomerRef(String realmId, String customerName) {
         QueryResponse response = query(realmId, "select Id from Customer where DisplayName = '" + qbLiteral(customerName) + "'");
         List<Map<String, Object>> customers = castList(response.queryResponse(), "Customer");
@@ -358,6 +455,18 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
         return methods.isEmpty() ? null : String.valueOf(methods.getFirst().get("Id"));
     }
 
+    private String findItemId(String realmId, String itemName) {
+        QueryResponse response = query(realmId, "select Id from Item where Name = '" + qbLiteral(itemName) + "'");
+        List<Map<String, Object>> items = castList(response.queryResponse(), "Item");
+        return items.isEmpty() ? null : String.valueOf(items.getFirst().get("Id"));
+    }
+
+    private String findTaxCodeIdByName(String realmId, String name) {
+        QueryResponse response = query(realmId, "select Id from TaxCode where Name = '" + qbLiteral(name) + "'");
+        List<Map<String, Object>> codes = castList(response.queryResponse(), "TaxCode");
+        return codes.isEmpty() ? null : String.valueOf(codes.getFirst().get("Id"));
+    }
+
     private void post(String realmId, String path, Map<String, Object> payload) {
         post(realmId, path, payload, Object.class);
     }
@@ -393,5 +502,11 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
     }
 
     public record PurchasePayload(@JsonAlias("Id") String id, @JsonAlias("DocNumber") String docNumber) {
+    }
+
+    public record SalesReceiptResponse(@JsonAlias("SalesReceipt") SalesReceiptPayload salesReceipt) {
+    }
+
+    public record SalesReceiptPayload(@JsonAlias("Id") String id, @JsonAlias("DocNumber") String docNumber) {
     }
 }

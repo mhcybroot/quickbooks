@@ -3,6 +3,7 @@ package com.example.quickbooksimporter.service;
 import com.example.quickbooksimporter.domain.NormalizedPayment;
 import com.example.quickbooksimporter.domain.NormalizedInvoice;
 import com.example.quickbooksimporter.domain.NormalizedExpense;
+import com.example.quickbooksimporter.domain.NormalizedSalesReceipt;
 import java.util.List;
 import java.time.LocalDate;
 import java.math.BigDecimal;
@@ -36,4 +37,14 @@ public interface QuickBooksGateway {
     boolean expenseExists(String realmId, String vendorName, LocalDate txnDate, BigDecimal amount, String referenceNo);
 
     QuickBooksExpenseCreateResult createExpense(String realmId, NormalizedExpense expense);
+
+    boolean customerExists(String realmId, String customerName);
+
+    boolean taxCodeExists(String realmId, String taxCodeName);
+
+    boolean salesReceiptExistsByDocNumber(String realmId, String docNumber);
+
+    void ensurePaymentMethod(String realmId, String paymentMethodName);
+
+    QuickBooksSalesReceiptCreateResult createSalesReceipt(String realmId, NormalizedSalesReceipt receipt);
 }
