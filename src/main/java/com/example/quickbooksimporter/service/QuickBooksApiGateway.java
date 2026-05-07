@@ -2,10 +2,13 @@ package com.example.quickbooksimporter.service;
 
 import com.example.quickbooksimporter.config.QuickBooksProperties;
 import com.example.quickbooksimporter.domain.InvoiceLine;
+import com.example.quickbooksimporter.domain.BillLine;
 import com.example.quickbooksimporter.domain.NormalizedExpense;
 import com.example.quickbooksimporter.domain.NormalizedInvoice;
 import com.example.quickbooksimporter.domain.NormalizedPayment;
 import com.example.quickbooksimporter.domain.NormalizedSalesReceipt;
+import com.example.quickbooksimporter.domain.NormalizedBill;
+import com.example.quickbooksimporter.domain.NormalizedBillPayment;
 import com.example.quickbooksimporter.domain.SalesReceiptLine;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import java.math.BigDecimal;
@@ -358,6 +361,126 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
         return new QuickBooksSalesReceiptCreateResult(response.salesReceipt().id(), response.salesReceipt().docNumber());
     }
 
+    @Override
+    public boolean billExistsByDocNumber(String realmId, String docNumber) {
+        if (docNumber == null) {
+            return false;
+        }
+        QueryResponse response = query(realmId, "select Id from Bill where DocNumber = '" + qbLiteral(docNumber) + "'");
+        return response.queryResponse() != null && response.queryResponse().containsKey("Bill");
+    }
+
+    @Override
+    public QuickBooksBillRef findBillByDocNumber(String realmId, String billNo) {
+        QueryResponse response = query(realmId, "select Id, DocNumber, Balance, VendorRef from Bill where DocNumber = '" + qbLiteral(billNo) + "'");
+        List<Map<String, Object>> bills = castList(response.queryResponse(), "Bill");
+        if (bills.isEmpty()) {
+            return null;
+        }
+        Map<String, Object> bill = bills.getFirst();
+        Map<String, Object> vendorRef = castMap(bill.get("VendorRef"));
+        return new QuickBooksBillRef(
+                String.valueOf(bill.get("Id")),
+                String.valueOf(bill.get("DocNumber")),
+                vendorRef == null ? null : String.valueOf(vendorRef.get("value")),
+                vendorRef == null ? null : String.valueOf(vendorRef.get("name")),
+                toBigDecimal(bill.get("Balance")));
+    }
+
+    @Override
+    public boolean billPaymentExists(String realmId, String vendorName, LocalDate paymentDate, String referenceNo, BigDecimal amount) {
+        if (vendorName == null || paymentDate == null || referenceNo == null || amount == null) {
+            return false;
+        }
+        String vendorId = findVendorId(realmId, vendorName);
+        if (vendorId == null) {
+            return false;
+        }
+        String query = "select Id from BillPayment where VendorRef = '" + qbLiteral(vendorId) + "'"
+                + " and TxnDate = '" + paymentDate + "'"
+                + " and TotalAmt = '" + amount + "'"
+                + " and DocNumber = '" + qbLiteral(referenceNo) + "'";
+        QueryResponse response = query(realmId, query);
+        return response.queryResponse() != null && response.queryResponse().containsKey("BillPayment");
+    }
+
+    @Override
+    public QuickBooksBillCreateResult createBill(String realmId, NormalizedBill bill) {
+        String vendorId = findVendorId(realmId, bill.vendor());
+        if (vendorId == null) {
+            throw new IllegalStateException("Vendor not found in QuickBooks: " + bill.vendor());
+        }
+        String apAccountId = findAccountIdByName(realmId, bill.apAccount());
+        if (apAccountId == null) {
+            throw new IllegalStateException("AP account not found in QuickBooks: " + bill.apAccount());
+        }
+        java.util.List<java.util.Map<String, Object>> lines = new java.util.ArrayList<>();
+        for (BillLine line : bill.lines()) {
+            java.util.Map<String, Object> detail = new java.util.LinkedHashMap<>();
+            if (!StringUtils.isBlank(line.itemName())) {
+                String itemId = findItemId(realmId, line.itemName());
+                if (itemId == null) {
+                    throw new IllegalStateException("Item not found in QuickBooks: " + line.itemName());
+                }
+                detail.put("ItemRef", Map.of("value", itemId));
+                detail.put("Qty", line.quantity());
+                if (line.rate() != null) {
+                    detail.put("UnitPrice", line.rate());
+                }
+                lines.add(Map.of(
+                        "Amount", line.amount(),
+                        "Description", line.description() == null ? "" : line.description(),
+                        "DetailType", "ItemBasedExpenseLineDetail",
+                        "ItemBasedExpenseLineDetail", detail));
+            } else {
+                String categoryId = findAccountIdByName(realmId, line.category());
+                if (categoryId == null) {
+                    throw new IllegalStateException("Category not found in QuickBooks: " + line.category());
+                }
+                detail.put("AccountRef", Map.of("value", categoryId));
+                lines.add(Map.of(
+                        "Amount", line.amount(),
+                        "Description", line.description() == null ? "" : line.description(),
+                        "DetailType", "AccountBasedExpenseLineDetail",
+                        "AccountBasedExpenseLineDetail", detail));
+            }
+        }
+
+        java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("VendorRef", Map.of("value", vendorId));
+        payload.put("APAccountRef", Map.of("value", apAccountId));
+        payload.put("TxnDate", String.valueOf(bill.txnDate()));
+        payload.put("DueDate", bill.dueDate() == null ? null : String.valueOf(bill.dueDate()));
+        payload.put("DocNumber", bill.billNo());
+        payload.put("Line", lines);
+        BillResponse response = post(realmId, "/v3/company/" + realmId + "/bill", payload, BillResponse.class);
+        return new QuickBooksBillCreateResult(response.bill().id(), response.bill().docNumber());
+    }
+
+    @Override
+    public QuickBooksPaymentCreateResult createBillPayment(String realmId, NormalizedBillPayment payment, QuickBooksBillRef billRef) {
+        String vendorId = billRef.vendorId() != null ? billRef.vendorId() : findVendorId(realmId, payment.vendor());
+        if (vendorId == null) {
+            throw new IllegalStateException("Vendor not found in QuickBooks: " + payment.vendor());
+        }
+        String paymentAccountId = findAccountIdByName(realmId, payment.paymentAccount());
+        if (paymentAccountId == null) {
+            throw new IllegalStateException("Payment account not found in QuickBooks: " + payment.paymentAccount());
+        }
+        java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("VendorRef", Map.of("value", vendorId));
+        payload.put("TxnDate", String.valueOf(payment.paymentDate()));
+        payload.put("DocNumber", payment.referenceNo());
+        payload.put("TotalAmt", payment.paymentAmount());
+        payload.put("PayType", "Check");
+        payload.put("CheckPayment", Map.of("BankAccountRef", Map.of("value", paymentAccountId)));
+        payload.put("Line", List.of(Map.of(
+                "Amount", payment.application().appliedAmount(),
+                "LinkedTxn", List.of(Map.of("TxnId", billRef.billId(), "TxnType", "Bill")))));
+        BillPaymentResponse response = post(realmId, "/v3/company/" + realmId + "/billpayment", payload, BillPaymentResponse.class);
+        return new QuickBooksPaymentCreateResult(response.billPayment().id(), response.billPayment().docNumber());
+    }
+
     private Map<String, Object> findCustomerRef(String realmId, String customerName) {
         QueryResponse response = query(realmId, "select Id from Customer where DisplayName = '" + qbLiteral(customerName) + "'");
         List<Map<String, Object>> customers = castList(response.queryResponse(), "Customer");
@@ -508,5 +631,17 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
     }
 
     public record SalesReceiptPayload(@JsonAlias("Id") String id, @JsonAlias("DocNumber") String docNumber) {
+    }
+
+    public record BillResponse(@JsonAlias("Bill") BillPayload bill) {
+    }
+
+    public record BillPayload(@JsonAlias("Id") String id, @JsonAlias("DocNumber") String docNumber) {
+    }
+
+    public record BillPaymentResponse(@JsonAlias("BillPayment") BillPaymentPayload billPayment) {
+    }
+
+    public record BillPaymentPayload(@JsonAlias("Id") String id, @JsonAlias("DocNumber") String docNumber) {
     }
 }

@@ -4,5 +4,7 @@ public enum EntityType {
     INVOICE,
     PAYMENT,
     EXPENSE,
-    SALES_RECEIPT
+    SALES_RECEIPT,
+    BILL,
+    BILL_PAYMENT
 }

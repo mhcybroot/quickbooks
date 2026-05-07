@@ -1,0 +1,12 @@
+BillNo,Vendor,TxnDate,DueDate,APAccount,Item,Category,Description,Quantity,Rate,Amount,Taxable,TaxCode,TaxRate
+BILL-CASE-0001,City Supply House,05/23/2026,06/22/2026,Accounts Payable (A/P),,Supplies,Valid control row,1,100.00,100.00,N,NON,0
+,City Supply House,05/23/2026,06/22/2026,Accounts Payable (A/P),,Supplies,Missing bill number,1,100.00,100.00,N,NON,0
+BILL-CASE-0003,,05/23/2026,06/22/2026,Accounts Payable (A/P),,Supplies,Missing vendor,1,100.00,100.00,N,NON,0
+BILL-CASE-0004,City Supply House,,06/22/2026,Accounts Payable (A/P),,Supplies,Missing txn date,1,100.00,100.00,N,NON,0
+BILL-CASE-0005,City Supply House,05/23/2026,06/22/2026,, ,Supplies,Missing AP account,1,100.00,100.00,N,NON,0
+BILL-CASE-0006,City Supply House,05/23/2026,06/22/2026,Accounts Payable (A/P),,,Missing item and category,1,100.00,100.00,N,NON,0
+BILL-CASE-0007,City Supply House,05/23/2026,06/22/2026,Accounts Payable (A/P),,Supplies,Zero amount,1,0,0,N,NON,0
+BILL-CASE-0008,City Supply House,05/23/2026,06/22/2026,Accounts Payable (A/P),,Supplies,Taxable missing tax code,1,100.00,100.00,Y,,5
+BILL-CASE-0009,City Supply House,05/23/2026,06/22/2026,Accounts Payable (A/P),,Supplies,Taxable invalid tax code,1,100.00,100.00,Y,UNKNOWN_CODE,5
+BILL-CASE-0010,City Supply House,05/23/2026,06/22/2026,Accounts Payable (A/P),,Supplies,Group mismatch row A,1,60.00,60.00,N,NON,0
+BILL-CASE-0010,Northwind Electric,05/23/2026,06/22/2026,Accounts Payable (A/P),,Supplies,Group mismatch row B,1,40.00,40.00,N,NON,0

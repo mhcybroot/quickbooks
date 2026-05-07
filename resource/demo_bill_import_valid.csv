@@ -1,0 +1,5 @@
+BillNo,Vendor,TxnDate,DueDate,APAccount,Item,Category,Description,Quantity,Rate,Amount,Taxable,TaxCode,TaxRate
+BILL-260901,City Supply House,05/20/2026,06/19/2026,Accounts Payable (A/P),,Supplies,Office consumables batch 1,1,180.00,180.00,N,NON,0
+BILL-260901,City Supply House,05/20/2026,06/19/2026,Accounts Payable (A/P),,Utilities,Storage utility fee,1,95.00,95.00,N,NON,0
+BILL-260902,Northwind Electric,05/21/2026,06/20/2026,Accounts Payable (A/P),,Utilities,Monthly electricity statement,1,420.00,420.00,N,NON,0
+BILL-260903,Rapid Courier BD,05/22/2026,06/21/2026,Accounts Payable (A/P),,Shipping,Document delivery services,3,28.50,85.50,N,NON,0

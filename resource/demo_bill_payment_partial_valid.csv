@@ -1,0 +1,6 @@
+Vendor,PaymentDate,ReferenceNo,PaymentAccount,BillNo,AppliedAmount,PaymentAmount
+City Supply House,05/25/2026,BPAY-260901-1,Checking,BILL-260901,100.00,100.00
+City Supply House,05/30/2026,BPAY-260901-2,Checking,BILL-260901,175.00,175.00
+Northwind Electric,05/28/2026,BPAY-260902-1,Checking,BILL-260902,200.00,200.00
+Northwind Electric,06/05/2026,BPAY-260902-2,Checking,BILL-260902,220.00,220.00
+Rapid Courier BD,05/29/2026,BPAY-260903-1,Checking,BILL-260903,85.50,85.50

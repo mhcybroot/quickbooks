@@ -4,6 +4,8 @@ import com.example.quickbooksimporter.domain.NormalizedPayment;
 import com.example.quickbooksimporter.domain.NormalizedInvoice;
 import com.example.quickbooksimporter.domain.NormalizedExpense;
 import com.example.quickbooksimporter.domain.NormalizedSalesReceipt;
+import com.example.quickbooksimporter.domain.NormalizedBill;
+import com.example.quickbooksimporter.domain.NormalizedBillPayment;
 import java.util.List;
 import java.time.LocalDate;
 import java.math.BigDecimal;
@@ -47,4 +49,14 @@ public interface QuickBooksGateway {
     void ensurePaymentMethod(String realmId, String paymentMethodName);
 
     QuickBooksSalesReceiptCreateResult createSalesReceipt(String realmId, NormalizedSalesReceipt receipt);
+
+    boolean billExistsByDocNumber(String realmId, String docNumber);
+
+    QuickBooksBillCreateResult createBill(String realmId, NormalizedBill bill);
+
+    QuickBooksBillRef findBillByDocNumber(String realmId, String billNo);
+
+    boolean billPaymentExists(String realmId, String vendorName, LocalDate paymentDate, String referenceNo, BigDecimal amount);
+
+    QuickBooksPaymentCreateResult createBillPayment(String realmId, NormalizedBillPayment payment, QuickBooksBillRef billRef);
 }
