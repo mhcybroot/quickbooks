@@ -1,0 +1,16 @@
+Customer,PaymentDate,ReferenceNo,PaymentMethod,DepositToAccount,InvoiceNo,AppliedAmount,PaymentAmount
+Acme Interiors,05/08/2026,PAY-CASE-0001,Cash,Checking,INV-260501,250.00,250.00
+,05/08/2026,PAY-CASE-0002,Cash,Checking,INV-260501,100.00,100.00
+Acme Interiors,,PAY-CASE-0003,Cash,Checking,INV-260501,100.00,100.00
+Acme Interiors,05/08/2026,,Cash,Checking,INV-260501,100.00,100.00
+Acme Interiors,05/08/2026,PAY-CASE-0005,Cash,Checking,,100.00,100.00
+Acme Interiors,05/08/2026,PAY-CASE-0006,Cash,Checking,INV-260501,,100.00
+Acme Interiors,05/08/2026,PAY-CASE-0007,Cash,Checking,INV-260501,100.00,
+Acme Interiors,05/08/2026,PAY-CASE-0008,Cash,Checking,INV-260501,0,0
+Acme Interiors,05/08/2026,PAY-CASE-0009,Cash,Checking,INV-260501,150.00,100.00
+Acme Interiors,05/08/2026,PAY-CASE-0010,Cash,Checking,INV-260501,999999.00,999999.00
+Acme Interiors,2026-05-08,PAY-CASE-0011,Cash,Checking,INV-260501,50.00,50.00
+Acme Interiors,05/08/2026,PAY-CASE-0012,Cash,Unknown Account,INV-260501,50.00,50.00
+Acme Interiors,05/08/2026,PAY-CASE-0013,Unknown Method,Checking,INV-260501,50.00,50.00
+Wrong Customer,05/08/2026,PAY-CASE-0014,Cash,Checking,INV-260501,50.00,50.00
+Acme Interiors,05/08/2026,PAY-CASE-0015,Cash,Checking,INV-DOES-NOT-EXIST,50.00,50.00

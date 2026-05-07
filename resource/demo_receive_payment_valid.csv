@@ -1,0 +1,6 @@
+Customer,PaymentDate,ReferenceNo,PaymentMethod,DepositToAccount,InvoiceNo,AppliedAmount,PaymentAmount
+Acme Interiors,05/08/2026,PAY-ACME-1001,Cash,Checking,INV-260501,250.00,250.00
+Acme Interiors,05/10/2026,PAY-ACME-1002,Bank Transfer,Checking,INV-260501,150.00,150.00
+Blue Harbor Cafe,05/09/2026,PAY-BHC-2001,Card,Checking,INV-260504,360.00,360.00
+Blue Harbor Cafe,05/12/2026,PAY-BHC-2002,Card,Checking,INV-260505,180.00,180.00
+Northwind Traders,05/11/2026,PAY-NWT-3001,Check,Checking,INV-260503,499.00,499.00

@@ -43,6 +43,7 @@ public class ImportHistoryView extends VerticalLayout {
 
         Grid<ImportRunEntity> runGrid = new Grid<>(ImportRunEntity.class, false);
         runGrid.addColumn(ImportRunEntity::getId).setHeader("Run ID");
+        runGrid.addColumn(run -> run.getEntityType().name()).setHeader("Entity");
         runGrid.addColumn(ImportRunEntity::getSourceFileName).setHeader("File");
         runGrid.addColumn(ImportRunEntity::getStatus).setHeader("Status");
         runGrid.addColumn(ImportRunEntity::getTotalRows).setHeader("Rows");

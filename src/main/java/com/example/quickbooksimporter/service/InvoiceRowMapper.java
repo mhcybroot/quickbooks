@@ -16,7 +16,10 @@ import org.springframework.stereotype.Component;
 @Component
 public class InvoiceRowMapper {
 
-    private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("MM/dd/yy");
+    private static final List<DateTimeFormatter> DATE_FORMATS = List.of(
+            DateTimeFormatter.ofPattern("MM/dd/yy"),
+            DateTimeFormatter.ofPattern("MM/dd/yyyy"),
+            DateTimeFormatter.ISO_LOCAL_DATE);
 
     public NormalizedInvoice map(ParsedCsvRow row, Map<NormalizedInvoiceField, String> mapping) {
         InvoiceLine line = new InvoiceLine(
@@ -51,11 +54,13 @@ public class InvoiceRowMapper {
         if (value == null) {
             return null;
         }
-        try {
-            return LocalDate.parse(value, DATE_FORMAT);
-        } catch (DateTimeParseException exception) {
-            throw new IllegalArgumentException("Invalid date: " + value);
+        for (DateTimeFormatter formatter : DATE_FORMATS) {
+            try {
+                return LocalDate.parse(value, formatter);
+            } catch (DateTimeParseException ignored) {
+            }
         }
+        throw new IllegalArgumentException("Invalid date: " + value);
     }
 
     private BigDecimal decimal(String value) {

@@ -3,9 +3,11 @@ package com.example.quickbooksimporter.service;
 import com.example.quickbooksimporter.config.QuickBooksProperties;
 import com.example.quickbooksimporter.domain.InvoiceLine;
 import com.example.quickbooksimporter.domain.NormalizedInvoice;
+import com.example.quickbooksimporter.domain.NormalizedPayment;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import java.math.BigDecimal;
 import java.net.URI;
+import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -117,6 +119,73 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
         return new QuickBooksInvoiceCreateResult(response.invoice().id(), response.invoice().docNumber());
     }
 
+    @Override
+    public QuickBooksInvoiceRef findInvoiceByDocNumber(String realmId, String invoiceNo) {
+        QueryResponse response = query(realmId, "select Id, DocNumber, Balance, CustomerRef from Invoice where DocNumber = '" + qbLiteral(invoiceNo) + "'");
+        List<Map<String, Object>> invoices = castList(response.queryResponse(), "Invoice");
+        if (invoices.isEmpty()) {
+            return null;
+        }
+        Map<String, Object> invoice = invoices.getFirst();
+        Map<String, Object> customerRef = castMap(invoice.get("CustomerRef"));
+        return new QuickBooksInvoiceRef(
+                String.valueOf(invoice.get("Id")),
+                String.valueOf(invoice.get("DocNumber")),
+                customerRef == null ? null : String.valueOf(customerRef.get("value")),
+                customerRef == null ? null : String.valueOf(customerRef.get("name")),
+                toBigDecimal(invoice.get("Balance")));
+    }
+
+    @Override
+    public boolean paymentExistsByReference(String realmId, String customerName, LocalDate paymentDate, String referenceNo) {
+        if (customerName == null || paymentDate == null || referenceNo == null) {
+            return false;
+        }
+        String customerId = findCustomerId(realmId, customerName);
+        if (customerId == null) {
+            return false;
+        }
+        String query = "select Id from Payment where PaymentRefNum = '" + qbLiteral(referenceNo) + "'"
+                + " and CustomerRef = '" + qbLiteral(customerId) + "'"
+                + " and TxnDate = '" + paymentDate + "'";
+        QueryResponse response = query(realmId, query);
+        return response.queryResponse() != null && response.queryResponse().containsKey("Payment");
+    }
+
+    @Override
+    public QuickBooksPaymentCreateResult createPayment(String realmId, NormalizedPayment payment, QuickBooksInvoiceRef invoiceRef) {
+        String customerId = invoiceRef.customerId() != null ? invoiceRef.customerId() : findCustomerId(realmId, payment.customer());
+        if (customerId == null) {
+            throw new IllegalStateException("Customer not found in QuickBooks: " + payment.customer());
+        }
+        String depositAccountId = findAccountIdByName(realmId, payment.depositAccount());
+        if (depositAccountId == null) {
+            throw new IllegalStateException("Deposit account not found in QuickBooks: " + payment.depositAccount());
+        }
+
+        java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("CustomerRef", Map.of("value", customerId));
+        payload.put("TxnDate", String.valueOf(payment.paymentDate()));
+        payload.put("TotalAmt", payment.paymentAmount());
+        payload.put("PaymentRefNum", payment.referenceNo());
+        payload.put("DepositToAccountRef", Map.of("value", depositAccountId));
+        if (!StringUtils.isBlank(payment.paymentMethod())) {
+            String methodId = findPaymentMethodIdByName(realmId, payment.paymentMethod());
+            if (methodId == null) {
+                throw new IllegalStateException("Payment method not found in QuickBooks: " + payment.paymentMethod());
+            }
+            payload.put("PaymentMethodRef", Map.of("value", methodId));
+        }
+        payload.put("Line", List.of(Map.of(
+                "Amount", payment.application().appliedAmount(),
+                "LinkedTxn", List.of(Map.of(
+                        "TxnId", invoiceRef.invoiceId(),
+                        "TxnType", "Invoice")))));
+
+        PaymentResponse response = post(realmId, "/v3/company/" + realmId + "/payment", payload, PaymentResponse.class);
+        return new QuickBooksPaymentCreateResult(response.payment().id(), response.payment().docNumber());
+    }
+
     private Map<String, Object> findCustomerRef(String realmId, String customerName) {
         QueryResponse response = query(realmId, "select Id from Customer where DisplayName = '" + qbLiteral(customerName) + "'");
         List<Map<String, Object>> customers = castList(response.queryResponse(), "Customer");
@@ -141,6 +210,24 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
             return List.of();
         }
         return (List<Map<String, Object>>) container.get(key);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> castMap(Object value) {
+        if (value == null) {
+            return null;
+        }
+        return (Map<String, Object>) value;
+    }
+
+    private BigDecimal toBigDecimal(Object value) {
+        if (value == null) {
+            return BigDecimal.ZERO;
+        }
+        if (value instanceof Number number) {
+            return BigDecimal.valueOf(number.doubleValue());
+        }
+        return new BigDecimal(String.valueOf(value));
     }
 
     private QueryResponse query(String realmId, String query) {
@@ -171,6 +258,24 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
         return value == null ? "" : value.replace("'", "''");
     }
 
+    private String findCustomerId(String realmId, String customerName) {
+        QueryResponse response = query(realmId, "select Id from Customer where DisplayName = '" + qbLiteral(customerName) + "'");
+        List<Map<String, Object>> customers = castList(response.queryResponse(), "Customer");
+        return customers.isEmpty() ? null : String.valueOf(customers.getFirst().get("Id"));
+    }
+
+    private String findAccountIdByName(String realmId, String accountName) {
+        QueryResponse response = query(realmId, "select Id from Account where Name = '" + qbLiteral(accountName) + "'");
+        List<Map<String, Object>> accounts = castList(response.queryResponse(), "Account");
+        return accounts.isEmpty() ? null : String.valueOf(accounts.getFirst().get("Id"));
+    }
+
+    private String findPaymentMethodIdByName(String realmId, String name) {
+        QueryResponse response = query(realmId, "select Id from PaymentMethod where Name = '" + qbLiteral(name) + "'");
+        List<Map<String, Object>> methods = castList(response.queryResponse(), "PaymentMethod");
+        return methods.isEmpty() ? null : String.valueOf(methods.getFirst().get("Id"));
+    }
+
     private void post(String realmId, String path, Map<String, Object> payload) {
         post(realmId, path, payload, Object.class);
     }
@@ -194,5 +299,11 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
     }
 
     public record InvoicePayload(@JsonAlias("Id") String id, @JsonAlias("DocNumber") String docNumber) {
+    }
+
+    public record PaymentResponse(@JsonAlias("Payment") PaymentPayload payment) {
+    }
+
+    public record PaymentPayload(@JsonAlias("Id") String id, @JsonAlias("DocNumber") String docNumber) {
     }
 }

@@ -1,0 +1,5 @@
+*InvoiceNo,*Customer,*InvoiceDate,*DueDate,Terms,Location,Memo,Item(Product/Service),ItemDescription,ItemQuantity,ItemRate,*ItemAmount,Taxable,TaxRate,Service Date
+INV-260501,Acme Interiors,05/01/2026,05/31/2026,Net 30,,Pre-payment demo invoice,Consulting,Initial consultation block,2,125.00,250.00,N,0%,05/01/2026
+INV-260503,Northwind Traders,05/03/2026,06/02/2026,Net 30,,Pre-payment demo invoice,Managed Service,Tier 1 support package,1,499.00,499.00,N,0%,05/03/2026
+INV-260504,Blue Harbor Cafe,05/04/2026,06/03/2026,Net 30,,Pre-payment demo invoice,Hardware Setup,POS terminal setup and test,3,120.00,360.00,N,0%,05/04/2026
+INV-260505,Blue Harbor Cafe,05/04/2026,06/03/2026,Net 30,,Pre-payment demo invoice,Training,Staff onboarding session,2,90.00,180.00,N,0%,05/04/2026
