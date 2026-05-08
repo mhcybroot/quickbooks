@@ -63,6 +63,7 @@ public class BatchImportView extends VerticalLayout {
 
     private BatchDraftItem selectedItem;
     private Long activeBatchId;
+    private boolean syncingDetailFields;
 
     public BatchImportView(ImportWorkflowFacade workflowFacade,
                            ImportBatchService batchService,
@@ -157,7 +158,7 @@ public class BatchImportView extends VerticalLayout {
         entityType.setItems(EntityType.values());
         entityType.setItemLabelGenerator(EntityType::displayName);
         entityType.addValueChangeListener(event -> {
-            if (selectedItem == null || event.getValue() == null) {
+            if (syncingDetailFields || selectedItem == null || event.getValue() == null) {
                 return;
             }
             selectedItem.setEntityType(event.getValue());
@@ -170,7 +171,7 @@ public class BatchImportView extends VerticalLayout {
 
         profile.setItemLabelGenerator(MappingProfileSummary::name);
         profile.addValueChangeListener(event -> {
-            if (selectedItem == null) {
+            if (syncingDetailFields || selectedItem == null) {
                 return;
             }
             selectedItem.setSelectedProfile(event.getValue());
@@ -284,6 +285,8 @@ public class BatchImportView extends VerticalLayout {
     }
 
     private void refreshDetailPanel() {
+        syncingDetailFields = true;
+        try {
         if (selectedItem == null) {
             detailSummary.setText("Select a file to review and validate it.");
             entityType.clear();
@@ -308,6 +311,9 @@ public class BatchImportView extends VerticalLayout {
             downloadAnchor.setVisible(true);
         } else {
             downloadAnchor.setVisible(false);
+        }
+        } finally {
+            syncingDetailFields = false;
         }
     }
 

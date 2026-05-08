@@ -1,0 +1,6 @@
+ReceiptNo,Customer,TxnDate,PaymentMethod,DepositAccount,Item,Description,Quantity,Rate,Amount,Taxable,TaxCode,TaxRate
+SRV3-270701,North Shore Cafe V3,07/09/2026,Cash,Checking,Consulting,Menu planning workshop,1,150.00,150.00,N,NON,0
+SRV3-270701,North Shore Cafe V3,07/09/2026,Cash,Checking,Installation,Counter hardware support,2,75.00,150.00,N,NON,0
+SRV3-270702,Lemon Tree Mart V3,07/10/2026,Card,Checking,Training,POS cashier training,1,190.00,190.00,N,NON,0
+SRV3-270703,Lemon Tree Mart V3,07/10/2026,Card,Checking,Training,Group mismatch row A,1,190.00,190.00,N,NON,0
+SRV3-270703,Other Customer V3,07/10/2026,Card,Checking,Training,Group mismatch row B,1,85.00,85.00,N,NON,0

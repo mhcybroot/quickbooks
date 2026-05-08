@@ -1,0 +1,10 @@
+Customer,PaymentDate,ReferenceNo,PaymentMethod,DepositToAccount,InvoiceNo,AppliedAmount,PaymentAmount
+Evergreen Foods V3,07/06/2026,RPV3-CASE-001,Cash,Checking,INV-270101,100.00,100.00
+,07/06/2026,RPV3-CASE-002,Cash,Checking,INV-270101,100.00,100.00
+Evergreen Foods V3,,RPV3-CASE-003,Cash,Checking,INV-270101,100.00,100.00
+Evergreen Foods V3,07/06/2026,,Cash,Checking,INV-270101,100.00,100.00
+Evergreen Foods V3,07/06/2026,RPV3-CASE-005,Cash,,INV-270101,100.00,100.00
+Evergreen Foods V3,07/06/2026,RPV3-CASE-006,Cash,Checking,,100.00,100.00
+Evergreen Foods V3,07/06/2026,RPV3-CASE-007,Cash,Checking,INV-270101,,100.00
+Evergreen Foods V3,07/06/2026,RPV3-CASE-008,Cash,Checking,INV-270101,0,0
+Evergreen Foods V3,07/06/2026,RPV3-CASE-009,Cash,Checking,INV-NOT-FOUND,100.00,100.00

@@ -1,0 +1,5 @@
+Customer,PaymentDate,ReferenceNo,PaymentMethod,DepositToAccount,InvoiceNo,AppliedAmount,PaymentAmount
+Evergreen Foods V3,07/06/2026,RPV3-EVG-001,Bank Transfer,Checking,INV-270101,250.00,250.00
+Evergreen Foods V3,07/12/2026,RPV3-EVG-002,Bank Transfer,Checking,INV-270101,200.00,200.00
+Maple Retail V3,07/08/2026,RPV3-MPL-001,Check,Checking,INV-270102,435.00,435.00
+Skyline Bistro V3,07/10/2026,RPV3-SKY-001,Card,Checking,INV-270103,520.00,520.00

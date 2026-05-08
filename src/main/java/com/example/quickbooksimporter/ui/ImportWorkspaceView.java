@@ -64,7 +64,7 @@ public class ImportWorkspaceView extends VerticalLayout {
 
         HorizontalLayout quickActions = new HorizontalLayout(importType, openSingle, openBatch, openHistory);
         quickActions.setWidthFull();
-        quickActions.setFlexWrap(HorizontalLayout.FlexWrap.WRAP);
+        quickActions.setWrap(true);
         quickActions.setAlignItems(Alignment.END);
         quickActions.expand(importType);
         add(UiComponents.card(

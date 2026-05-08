@@ -1,0 +1,9 @@
+Vendor,PaymentDate,ReferenceNo,PaymentAccount,BillNo,AppliedAmount,PaymentAmount
+Supply Chain Hub V3,07/14/2026,BPV3-001,Checking,BILLV3-270801,140.00,140.00
+Supply Chain Hub V3,07/18/2026,BPV3-002,Checking,BILLV3-270801,140.00,140.00
+Urban Electric Works V3,07/15/2026,BPV3-003,Checking,BILLV3-270802,430.00,430.00
+,07/15/2026,BPV3-004,Checking,BILLV3-270802,50.00,50.00
+Urban Electric Works V3,,BPV3-005,Checking,BILLV3-270802,50.00,50.00
+Urban Electric Works V3,07/15/2026,BPV3-006,,BILLV3-270802,50.00,50.00
+Urban Electric Works V3,07/15/2026,BPV3-007,Checking,,50.00,50.00
+Urban Electric Works V3,07/15/2026,BPV3-008,Checking,BILL-UNKNOWN,50.00,50.00
