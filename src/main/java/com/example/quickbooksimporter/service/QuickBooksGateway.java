@@ -68,4 +68,8 @@ public interface QuickBooksGateway {
     QboCleanupResult voidTransaction(String realmId, QboCleanupEntityType type, QboTransactionRow transaction);
 
     Map<String, List<QboDependencyBlocker>> findDependencyBlockers(String realmId, QboCleanupEntityType type, List<QboTransactionRow> transactions);
+
+    QboTransactionRow findTransactionById(String realmId, QboCleanupEntityType type, String id);
+
+    List<QboDependencyLink> findDirectDependencyLinks(String realmId, QboCleanupEntityType type, QboTransactionRow transaction);
 }

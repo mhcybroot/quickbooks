@@ -507,11 +507,11 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
             payload.put("SyncToken", transaction.syncToken());
             payload.put("sparse", true);
             postWithOperation(realmId, "/" + type.qboEntityName().toLowerCase(), payload, "delete", Map.class);
-            return new QboCleanupResult(transaction.id(), transaction.externalNumber(), "DELETE", true, "Deleted successfully", null);
+            return new QboCleanupResult(transaction.id(), transaction.externalNumber(), "PARENT", null, "DELETE", true, "Deleted successfully", null);
         } catch (RestClientResponseException ex) {
             log.error("QBO cleanup delete failed: realmId={}, type={}, id={}, syncToken={}, status={}, intuit_tid={}, body={}",
                     realmId, type, transaction.id(), transaction.syncToken(), ex.getStatusCode(), extractIntuitTid(ex), ex.getResponseBodyAsString());
-            return new QboCleanupResult(transaction.id(), transaction.externalNumber(), "DELETE", false, extractQboMessage(ex), extractIntuitTid(ex));
+            return new QboCleanupResult(transaction.id(), transaction.externalNumber(), "PARENT", null, "DELETE", false, extractQboMessage(ex), extractIntuitTid(ex));
         }
     }
 
@@ -523,11 +523,11 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
             payload.put("SyncToken", transaction.syncToken());
             payload.put("sparse", true);
             postWithOperation(realmId, "/" + type.qboEntityName().toLowerCase(), payload, "void", Map.class);
-            return new QboCleanupResult(transaction.id(), transaction.externalNumber(), "VOID", true, "Voided successfully", null);
+            return new QboCleanupResult(transaction.id(), transaction.externalNumber(), "PARENT", null, "VOID", true, "Voided successfully", null);
         } catch (RestClientResponseException ex) {
             log.error("QBO cleanup void failed: realmId={}, type={}, id={}, syncToken={}, status={}, intuit_tid={}, body={}",
                     realmId, type, transaction.id(), transaction.syncToken(), ex.getStatusCode(), extractIntuitTid(ex), ex.getResponseBodyAsString());
-            return new QboCleanupResult(transaction.id(), transaction.externalNumber(), "VOID", false, extractQboMessage(ex), extractIntuitTid(ex));
+            return new QboCleanupResult(transaction.id(), transaction.externalNumber(), "PARENT", null, "VOID", false, extractQboMessage(ex), extractIntuitTid(ex));
         }
     }
 
@@ -536,19 +536,76 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
                                                                           QboCleanupEntityType type,
                                                                           List<QboTransactionRow> transactions) {
         Map<String, List<QboDependencyBlocker>> blockers = new HashMap<>();
-        if (type == QboCleanupEntityType.INVOICE || type == QboCleanupEntityType.BILL) {
-            for (QboTransactionRow transaction : transactions) {
-                BigDecimal balance = transaction.balance() == null ? BigDecimal.ZERO : transaction.balance();
-                BigDecimal total = transaction.totalAmount() == null ? BigDecimal.ZERO : transaction.totalAmount();
-                if (total.compareTo(balance) > 0 && total.signum() > 0) {
-                    blockers.put(transaction.id(), List.of(new QboDependencyBlocker(
-                            transaction.id(),
-                            transaction.externalNumber(),
-                            "Linked payment(s) appear to exist. Remove dependent payments first.")));
-                }
+        for (QboTransactionRow transaction : transactions) {
+            List<QboDependencyLink> links = findDirectDependencyLinks(realmId, type, transaction);
+            if (!links.isEmpty()) {
+                blockers.put(transaction.id(), links.stream()
+                        .map(link -> new QboDependencyBlocker(
+                                transaction.id(),
+                                transaction.externalNumber(),
+                                "Linked " + link.childType().qboEntityName() + "(s) exist. Remove dependent records first."))
+                        .toList());
             }
         }
         return blockers;
+    }
+
+    @Override
+    public QboTransactionRow findTransactionById(String realmId, QboCleanupEntityType type, String id) {
+        String query = "select " + cleanupSelectFields(type) + " from " + type.qboEntityName()
+                + " where Id = '" + qbLiteral(id) + "' startposition 1 maxresults 1";
+        QueryResponse response = query(realmId, query);
+        List<Map<String, Object>> rows = castList(response.queryResponse(), type.qboEntityName());
+        if (rows.isEmpty()) {
+            return null;
+        }
+        return toCleanupRow(type, rows.getFirst());
+    }
+
+    @Override
+    public List<QboDependencyLink> findDirectDependencyLinks(String realmId, QboCleanupEntityType type, QboTransactionRow transaction) {
+        if (transaction == null || StringUtils.isBlank(transaction.id())) {
+            return List.of();
+        }
+        if (type == QboCleanupEntityType.INVOICE) {
+            QueryResponse invoiceResponse = query(realmId,
+                    "select Id, CustomerRef from Invoice where Id = '" + qbLiteral(transaction.id()) + "' startposition 1 maxresults 1");
+            List<Map<String, Object>> invoices = castList(invoiceResponse.queryResponse(), "Invoice");
+            if (invoices.isEmpty()) {
+                return List.of();
+            }
+            Map<String, Object> customerRef = castMap(invoices.getFirst().get("CustomerRef"));
+            if (customerRef == null || customerRef.get("value") == null) {
+                return List.of();
+            }
+            QueryResponse response = query(realmId,
+                    "select Id, Line from Payment where CustomerRef = '" + qbLiteral(String.valueOf(customerRef.get("value"))) + "' startposition 1 maxresults 1000");
+            List<Map<String, Object>> rows = castList(response.queryResponse(), "Payment");
+            return rows.stream()
+                    .filter(row -> hasLinkedTxnId(row, transaction.id()))
+                    .map(row -> new QboDependencyLink(transaction.id(), type, String.valueOf(row.get("Id")), QboCleanupEntityType.RECEIVE_PAYMENT, "Linked payment"))
+                    .toList();
+        }
+        if (type == QboCleanupEntityType.BILL) {
+            QueryResponse billResponse = query(realmId,
+                    "select Id, VendorRef from Bill where Id = '" + qbLiteral(transaction.id()) + "' startposition 1 maxresults 1");
+            List<Map<String, Object>> bills = castList(billResponse.queryResponse(), "Bill");
+            if (bills.isEmpty()) {
+                return List.of();
+            }
+            Map<String, Object> vendorRef = castMap(bills.getFirst().get("VendorRef"));
+            if (vendorRef == null || vendorRef.get("value") == null) {
+                return List.of();
+            }
+            QueryResponse response = query(realmId,
+                    "select Id, Line from BillPayment where VendorRef = '" + qbLiteral(String.valueOf(vendorRef.get("value"))) + "' startposition 1 maxresults 1000");
+            List<Map<String, Object>> rows = castList(response.queryResponse(), "BillPayment");
+            return rows.stream()
+                    .filter(row -> hasLinkedTxnId(row, transaction.id()))
+                    .map(row -> new QboDependencyLink(transaction.id(), type, String.valueOf(row.get("Id")), QboCleanupEntityType.BILL_PAYMENT, "Linked bill payment"))
+                    .toList();
+        }
+        return List.of();
     }
 
     private Map<String, Object> findCustomerRef(String realmId, String customerName) {
@@ -683,6 +740,34 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
 
     private String valueOrEmpty(Object value) {
         return value == null ? "" : String.valueOf(value);
+    }
+
+    @SuppressWarnings("unchecked")
+    private boolean hasLinkedTxnId(Map<String, Object> row, String txnId) {
+        Object linesObject = row.get("Line");
+        if (!(linesObject instanceof List<?> lines)) {
+            return false;
+        }
+        for (Object lineObject : lines) {
+            if (!(lineObject instanceof Map<?, ?> lineMapRaw)) {
+                continue;
+            }
+            Map<String, Object> lineMap = (Map<String, Object>) lineMapRaw;
+            Object linkedTxnObject = lineMap.get("LinkedTxn");
+            if (!(linkedTxnObject instanceof List<?> linkedTxns)) {
+                continue;
+            }
+            for (Object linkedTxnEntry : linkedTxns) {
+                if (!(linkedTxnEntry instanceof Map<?, ?> linkedTxnMapRaw)) {
+                    continue;
+                }
+                Map<String, Object> linkedTxnMap = (Map<String, Object>) linkedTxnMapRaw;
+                if (txnId.equals(String.valueOf(linkedTxnMap.get("TxnId")))) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private String cleanupSelectFields(QboCleanupEntityType type) {

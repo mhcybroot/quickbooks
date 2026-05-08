@@ -1,7 +1,9 @@
 package com.example.quickbooksimporter.ui;
 
 import com.example.quickbooksimporter.service.QboCleanupEntityType;
+import com.example.quickbooksimporter.service.QboCleanupDryRunPlan;
 import com.example.quickbooksimporter.service.QboCleanupFilter;
+import com.example.quickbooksimporter.service.QboCleanupRecoveryResult;
 import com.example.quickbooksimporter.service.QboCleanupResult;
 import com.example.quickbooksimporter.service.QboCleanupService;
 import com.example.quickbooksimporter.service.QboTransactionRow;
@@ -80,7 +82,9 @@ public abstract class QboCleanupPageBase extends VerticalLayout {
     }
 
     private void configureResultsGrid() {
+        resultGrid.addColumn(QboCleanupResult::source).setHeader("Source").setAutoWidth(true);
         resultGrid.addColumn(QboCleanupResult::action).setHeader("Action").setAutoWidth(true);
+        resultGrid.addColumn(QboCleanupResult::parentExternalNumber).setHeader("Parent").setAutoWidth(true);
         resultGrid.addColumn(QboCleanupResult::externalNumber).setHeader("Doc/Reference").setAutoWidth(true);
         resultGrid.addColumn(QboCleanupResult::success).setHeader("Success").setAutoWidth(true);
         resultGrid.addComponentColumn(result -> {
@@ -132,9 +136,7 @@ public abstract class QboCleanupPageBase extends VerticalLayout {
             return;
         }
         QboCleanupService.CleanupActionResponse response = cleanupService.delete(entityType, selected);
-        resultGrid.setItems(response.results());
-        notifyOutcome(response.results(), "Delete completed for selected records.");
-        search(false);
+        handleDeleteResponse(selected, response, "Delete completed for selected records.");
     }
 
     private void runVoidSelected() {
@@ -186,9 +188,7 @@ public abstract class QboCleanupPageBase extends VerticalLayout {
             return;
         }
         QboCleanupService.CleanupActionResponse response = cleanupService.delete(entityType, currentRows);
-        resultGrid.setItems(response.results());
-        notifyOutcome(response.results(), "Delete-all completed.");
-        search(false);
+        handleDeleteResponse(new ArrayList<>(currentRows), response, "Delete-all completed.");
     }
 
     private void confirmTwoStep(String message, Runnable action) {
@@ -222,6 +222,84 @@ public abstract class QboCleanupPageBase extends VerticalLayout {
             return;
         }
         notifyWarning(successMessage + " Failures: " + failures + ".");
+    }
+
+    private void handleDeleteResponse(List<QboTransactionRow> roots,
+                                      QboCleanupService.CleanupActionResponse response,
+                                      String successMessage) {
+        resultGrid.setItems(response.results());
+        notifyOutcome(response.results(), successMessage);
+        if (!response.blockers().isEmpty()) {
+            askLinkedDeleteRecovery(roots);
+        } else {
+            search(false);
+        }
+    }
+
+    private void askLinkedDeleteRecovery(List<QboTransactionRow> roots) {
+        QboCleanupDryRunPlan plan = cleanupService.prepareRecoveryPlan(entityType, roots);
+        if (plan.linkedCount() == 0) {
+            search(false);
+            return;
+        }
+        Dialog dialog = new Dialog();
+        dialog.setHeaderTitle("Linked Records Detected");
+        String breakdown = plan.linkedCountsByType().entrySet().stream()
+                .map(entry -> entry.getKey().qboEntityName() + ": " + entry.getValue())
+                .reduce((left, right) -> left + " | " + right)
+                .orElse("No linked details");
+        VerticalLayout body = new VerticalLayout(
+                new Paragraph("Delete linked records and retry parent deletes?"),
+                new Paragraph("Parents: " + plan.rootCount()
+                        + " | Linked: " + plan.linkedCount()
+                        + " | Total operations: " + plan.operationCount()),
+                new Paragraph("Linked breakdown: " + breakdown));
+        body.setPadding(false);
+        body.setSpacing(false);
+        Button cancel = new Button("Cancel", event -> {
+            dialog.close();
+            search(false);
+        });
+        Button execute = new Button("Delete Linked + Retry", event -> {
+            dialog.close();
+            runRecoveryPlan(plan, false);
+        });
+        execute.addThemeName("error");
+        dialog.add(body);
+        dialog.getFooter().add(cancel, execute);
+        dialog.open();
+    }
+
+    private void runRecoveryPlan(QboCleanupDryRunPlan plan, boolean allowVoidFallback) {
+        QboCleanupRecoveryResult result = cleanupService.executeRecoveryPlan(plan, allowVoidFallback);
+        resultGrid.setItems(result.results());
+        long failures = result.results().stream().filter(item -> !item.success()).count();
+        if (failures == 0) {
+            notifySuccess("Dependency recovery completed successfully.");
+            search(false);
+            return;
+        }
+        boolean hasLinkedDeleteFailures = result.results().stream()
+                .anyMatch(item -> !item.success() && "LINKED".equals(item.source()) && "DELETE".equals(item.action()));
+        if (hasLinkedDeleteFailures && !allowVoidFallback) {
+            Dialog fallbackDialog = new Dialog();
+            fallbackDialog.setHeaderTitle("Delete Failed For Linked Records");
+            fallbackDialog.add(new Paragraph("Some linked records could not be deleted. Try void fallback and continue?"));
+            Button cancel = new Button("Cancel", event -> {
+                fallbackDialog.close();
+                search(false);
+            });
+            Button fallback = new Button("Use Void Fallback", event -> {
+                fallbackDialog.close();
+                runRecoveryPlan(plan, true);
+            });
+            fallback.addThemeName("primary");
+            fallbackDialog.getFooter().add(cancel, fallback);
+            fallbackDialog.open();
+            return;
+        }
+        notifyWarning("Dependency recovery finished with " + failures + " failure(s).");
+        search(false);
     }
 
     private void notifySuccess(String message) {
