@@ -9,6 +9,7 @@ import com.example.quickbooksimporter.domain.NormalizedBillPayment;
 import java.util.List;
 import java.time.LocalDate;
 import java.math.BigDecimal;
+import java.util.Map;
 
 public interface QuickBooksGateway {
 
@@ -59,4 +60,12 @@ public interface QuickBooksGateway {
     boolean billPaymentExists(String realmId, String vendorName, LocalDate paymentDate, String referenceNo, BigDecimal amount);
 
     QuickBooksPaymentCreateResult createBillPayment(String realmId, NormalizedBillPayment payment, QuickBooksBillRef billRef);
+
+    List<QboTransactionRow> listTransactions(String realmId, QboCleanupEntityType type, QboCleanupFilter filter, Integer startPosition);
+
+    QboCleanupResult deleteTransaction(String realmId, QboCleanupEntityType type, QboTransactionRow transaction);
+
+    QboCleanupResult voidTransaction(String realmId, QboCleanupEntityType type, QboTransactionRow transaction);
+
+    Map<String, List<QboDependencyBlocker>> findDependencyBlockers(String realmId, QboCleanupEntityType type, List<QboTransactionRow> transactions);
 }

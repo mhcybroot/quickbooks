@@ -52,6 +52,13 @@ public class MainLayout extends AppLayout {
         nav.addItem(new SideNavItem("Bill Payments", BillPaymentImportView.class, VaadinIcon.WALLET.create()));
         nav.addItem(new SideNavItem("Receive Payments", PaymentImportView.class, VaadinIcon.MONEY_DEPOSIT.create()));
         nav.addItem(new SideNavItem("Expense Import", ExpenseImportView.class, VaadinIcon.CREDIT_CARD.create()));
+        nav.addItem(new SideNavItem("Cleanup Hub", QboCleanupHubView.class, VaadinIcon.TRASH.create()));
+        nav.addItem(new SideNavItem("Cleanup Invoices", InvoiceCleanupView.class, VaadinIcon.ARCHIVE.create()));
+        nav.addItem(new SideNavItem("Cleanup Sales Receipts", SalesReceiptCleanupView.class, VaadinIcon.CART_O.create()));
+        nav.addItem(new SideNavItem("Cleanup Bills", BillCleanupView.class, VaadinIcon.FILE_TREE_SUB.create()));
+        nav.addItem(new SideNavItem("Cleanup Bill Payments", BillPaymentCleanupView.class, VaadinIcon.MONEY_EXCHANGE.create()));
+        nav.addItem(new SideNavItem("Cleanup Receive Payments", ReceivePaymentCleanupView.class, VaadinIcon.MONEY.create()));
+        nav.addItem(new SideNavItem("Cleanup Expenses", ExpenseCleanupView.class, VaadinIcon.BACKWARDS.create()));
         nav.addItem(new SideNavItem("QuickBooks Settings", SettingsView.class, VaadinIcon.COG.create()));
         nav.addItem(new SideNavItem("Import History", ImportHistoryView.class, VaadinIcon.CHART.create()));
         Scroller navScroller = new Scroller(nav);

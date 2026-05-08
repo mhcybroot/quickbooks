@@ -14,7 +14,9 @@ import com.fasterxml.jackson.annotation.JsonAlias;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.apache.commons.lang3.StringUtils;
@@ -480,6 +482,75 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
         return new QuickBooksPaymentCreateResult(response.billPayment().id(), response.billPayment().docNumber());
     }
 
+    @Override
+    public List<QboTransactionRow> listTransactions(String realmId,
+                                                    QboCleanupEntityType type,
+                                                    QboCleanupFilter filter,
+                                                    Integer startPosition) {
+        int page = filter == null || filter.pageSize() <= 0 ? 200 : filter.pageSize();
+        int offset = startPosition == null || startPosition < 1 ? 1 : startPosition;
+        String query = "select " + cleanupSelectFields(type)
+                + " from " + type.qboEntityName()
+                + buildWhereClause(type, filter)
+                + " startposition " + offset
+                + " maxresults " + page;
+        QueryResponse response = query(realmId, query);
+        List<Map<String, Object>> rows = castList(response.queryResponse(), type.qboEntityName());
+        return rows.stream().map(row -> toCleanupRow(type, row)).toList();
+    }
+
+    @Override
+    public QboCleanupResult deleteTransaction(String realmId, QboCleanupEntityType type, QboTransactionRow transaction) {
+        try {
+            Map<String, Object> payload = new java.util.LinkedHashMap<>();
+            payload.put("Id", transaction.id());
+            payload.put("SyncToken", transaction.syncToken());
+            payload.put("sparse", true);
+            postWithOperation(realmId, "/" + type.qboEntityName().toLowerCase(), payload, "delete", Map.class);
+            return new QboCleanupResult(transaction.id(), transaction.externalNumber(), "DELETE", true, "Deleted successfully", null);
+        } catch (RestClientResponseException ex) {
+            log.error("QBO cleanup delete failed: realmId={}, type={}, id={}, syncToken={}, status={}, intuit_tid={}, body={}",
+                    realmId, type, transaction.id(), transaction.syncToken(), ex.getStatusCode(), extractIntuitTid(ex), ex.getResponseBodyAsString());
+            return new QboCleanupResult(transaction.id(), transaction.externalNumber(), "DELETE", false, extractQboMessage(ex), extractIntuitTid(ex));
+        }
+    }
+
+    @Override
+    public QboCleanupResult voidTransaction(String realmId, QboCleanupEntityType type, QboTransactionRow transaction) {
+        try {
+            Map<String, Object> payload = new java.util.LinkedHashMap<>();
+            payload.put("Id", transaction.id());
+            payload.put("SyncToken", transaction.syncToken());
+            payload.put("sparse", true);
+            postWithOperation(realmId, "/" + type.qboEntityName().toLowerCase(), payload, "void", Map.class);
+            return new QboCleanupResult(transaction.id(), transaction.externalNumber(), "VOID", true, "Voided successfully", null);
+        } catch (RestClientResponseException ex) {
+            log.error("QBO cleanup void failed: realmId={}, type={}, id={}, syncToken={}, status={}, intuit_tid={}, body={}",
+                    realmId, type, transaction.id(), transaction.syncToken(), ex.getStatusCode(), extractIntuitTid(ex), ex.getResponseBodyAsString());
+            return new QboCleanupResult(transaction.id(), transaction.externalNumber(), "VOID", false, extractQboMessage(ex), extractIntuitTid(ex));
+        }
+    }
+
+    @Override
+    public Map<String, List<QboDependencyBlocker>> findDependencyBlockers(String realmId,
+                                                                          QboCleanupEntityType type,
+                                                                          List<QboTransactionRow> transactions) {
+        Map<String, List<QboDependencyBlocker>> blockers = new HashMap<>();
+        if (type == QboCleanupEntityType.INVOICE || type == QboCleanupEntityType.BILL) {
+            for (QboTransactionRow transaction : transactions) {
+                BigDecimal balance = transaction.balance() == null ? BigDecimal.ZERO : transaction.balance();
+                BigDecimal total = transaction.totalAmount() == null ? BigDecimal.ZERO : transaction.totalAmount();
+                if (total.compareTo(balance) > 0 && total.signum() > 0) {
+                    blockers.put(transaction.id(), List.of(new QboDependencyBlocker(
+                            transaction.id(),
+                            transaction.externalNumber(),
+                            "Linked payment(s) appear to exist. Remove dependent payments first.")));
+                }
+            }
+        }
+        return blockers;
+    }
+
     private Map<String, Object> findCustomerRef(String realmId, String customerName) {
         QueryResponse response = query(realmId, "select Id from Customer where DisplayName = '" + qbLiteral(customerName) + "'");
         List<Map<String, Object>> customers = castList(response.queryResponse(), "Customer");
@@ -552,6 +623,90 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
         return value == null ? "" : value.replace("'", "''");
     }
 
+    private String buildWhereClause(QboCleanupEntityType type, QboCleanupFilter filter) {
+        if (filter == null) {
+            return "";
+        }
+        java.util.List<String> conditions = new java.util.ArrayList<>();
+        if (filter.fromDate() != null) {
+            conditions.add("TxnDate >= '" + filter.fromDate() + "'");
+        }
+        if (filter.toDate() != null) {
+            conditions.add("TxnDate <= '" + filter.toDate() + "'");
+        }
+        if (!StringUtils.isBlank(filter.docNumberContains())) {
+            conditions.add(type.numberField() + " LIKE '%" + qbLiteral(filter.docNumberContains()) + "%'");
+        }
+        if (conditions.isEmpty()) {
+            return "";
+        }
+        return " where " + String.join(" and ", conditions);
+    }
+
+    private QboTransactionRow toCleanupRow(QboCleanupEntityType type, Map<String, Object> row) {
+        Map<String, Object> customer = castMap(row.get("CustomerRef"));
+        Map<String, Object> vendor = castMap(row.get("VendorRef"));
+        Map<String, Object> entity = castMap(row.get("EntityRef"));
+        String externalNumber = type == QboCleanupEntityType.RECEIVE_PAYMENT
+                ? valueOrEmpty(row.get("PaymentRefNum"))
+                : valueOrEmpty(row.get("DocNumber"));
+        String partyName = customer != null
+                ? valueOrEmpty(customer.get("name"))
+                : (vendor != null
+                        ? valueOrEmpty(vendor.get("name"))
+                        : valueOrEmpty(entity == null ? null : entity.get("name")));
+        BigDecimal balance = type == QboCleanupEntityType.RECEIVE_PAYMENT
+                ? toBigDecimal(row.get("UnappliedAmt"))
+                : toBigDecimal(row.get("Balance"));
+        return new QboTransactionRow(
+                valueOrEmpty(row.get("Id")),
+                valueOrEmpty(row.get("SyncToken")),
+                type,
+                externalNumber,
+                parseDate(row.get("TxnDate")),
+                partyName,
+                toBigDecimal(row.get("TotalAmt")),
+                balance,
+                valueOrEmpty(row.get("PrivateNote")));
+    }
+
+    private LocalDate parseDate(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(String.valueOf(value));
+        } catch (DateTimeParseException exception) {
+            return null;
+        }
+    }
+
+    private String valueOrEmpty(Object value) {
+        return value == null ? "" : String.valueOf(value);
+    }
+
+    private String cleanupSelectFields(QboCleanupEntityType type) {
+        return switch (type) {
+            case INVOICE -> "Id, SyncToken, TxnDate, TotalAmt, Balance, DocNumber, CustomerRef, PrivateNote";
+            case SALES_RECEIPT -> "Id, SyncToken, TxnDate, TotalAmt, Balance, DocNumber, CustomerRef, PrivateNote";
+            case BILL -> "Id, SyncToken, TxnDate, TotalAmt, Balance, DocNumber, VendorRef, PrivateNote";
+            case BILL_PAYMENT -> "Id, SyncToken, TxnDate, TotalAmt, DocNumber, VendorRef, PrivateNote";
+            case RECEIVE_PAYMENT -> "Id, SyncToken, TxnDate, TotalAmt, UnappliedAmt, PaymentRefNum, CustomerRef, PrivateNote";
+            case EXPENSE -> "Id, SyncToken, TxnDate, TotalAmt, DocNumber, EntityRef, PrivateNote";
+        };
+    }
+
+    private String extractQboMessage(RestClientResponseException ex) {
+        if (StringUtils.isBlank(ex.getResponseBodyAsString())) {
+            return ex.getStatusCode() + " " + ex.getStatusText();
+        }
+        return ex.getStatusCode() + ": " + ex.getResponseBodyAsString();
+    }
+
+    private String extractIntuitTid(RestClientResponseException ex) {
+        return ex.getResponseHeaders() == null ? null : ex.getResponseHeaders().getFirst("intuit_tid");
+    }
+
     private String findCustomerId(String realmId, String customerName) {
         QueryResponse response = query(realmId, "select Id from Customer where DisplayName = '" + qbLiteral(customerName) + "'");
         List<Map<String, Object>> customers = castList(response.queryResponse(), "Customer");
@@ -597,6 +752,19 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
         String token = connectionService.getActiveConnection().getAccessToken();
         return restClient.post()
                 .uri(URI.create(properties.baseUrl() + path + "?minorversion=75"))
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.APPLICATION_JSON)
+                .body(payload)
+                .retrieve()
+                .body(responseType);
+    }
+
+    private <T> T postWithOperation(String realmId, String path, Map<String, Object> payload, String operation, Class<T> responseType) {
+        String token = connectionService.getActiveConnection().getAccessToken();
+        String uri = properties.baseUrl() + "/v3/company/" + realmId + path + "?operation=" + operation + "&minorversion=75";
+        return restClient.post()
+                .uri(URI.create(uri))
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.APPLICATION_JSON)

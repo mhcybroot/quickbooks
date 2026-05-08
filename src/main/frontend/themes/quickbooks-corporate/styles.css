@@ -280,3 +280,16 @@ vaadin-button[theme~="tertiary-inline"]::part(label) {
   overflow-wrap: anywhere;
   word-break: break-word;
 }
+
+.cleanup-results-grid vaadin-grid-cell-content {
+  white-space: normal;
+  text-overflow: clip;
+  overflow: visible;
+}
+
+.cleanup-message-cell {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.35;
+}
