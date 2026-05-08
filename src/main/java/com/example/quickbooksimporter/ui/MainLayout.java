@@ -2,6 +2,8 @@ package com.example.quickbooksimporter.ui;
 
 import com.example.quickbooksimporter.service.QuickBooksConnectionService;
 import com.example.quickbooksimporter.service.QuickBooksConnectionStatus;
+import com.example.quickbooksimporter.service.LegalUrlService;
+import com.example.quickbooksimporter.ui.components.LegalLinks;
 import com.vaadin.flow.component.applayout.AppLayout;
 import com.vaadin.flow.component.applayout.DrawerToggle;
 import com.vaadin.flow.component.button.Button;
@@ -11,6 +13,7 @@ import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.Scroller;
+import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.sidenav.SideNav;
 import com.vaadin.flow.component.sidenav.SideNavItem;
 import com.vaadin.flow.theme.lumo.LumoUtility;
@@ -19,7 +22,7 @@ import jakarta.annotation.security.PermitAll;
 @PermitAll
 public class MainLayout extends AppLayout {
 
-    public MainLayout(QuickBooksConnectionService connectionService) {
+    public MainLayout(QuickBooksConnectionService connectionService, LegalUrlService legalUrlService) {
         QuickBooksConnectionStatus status = connectionService.getStatus();
         DrawerToggle toggle = new DrawerToggle();
         H1 title = new H1("QuickBooks Importer");
@@ -51,6 +54,12 @@ public class MainLayout extends AppLayout {
         nav.addItem(new SideNavItem("Expense Import", ExpenseImportView.class, VaadinIcon.CREDIT_CARD.create()));
         nav.addItem(new SideNavItem("QuickBooks Settings", SettingsView.class, VaadinIcon.COG.create()));
         nav.addItem(new SideNavItem("Import History", ImportHistoryView.class, VaadinIcon.CHART.create()));
-        addToDrawer(new Scroller(nav));
+        Scroller navScroller = new Scroller(nav);
+        VerticalLayout drawer = new VerticalLayout(navScroller, LegalLinks.inline(legalUrlService));
+        drawer.setSizeFull();
+        drawer.expand(navScroller);
+        drawer.setPadding(true);
+        drawer.setSpacing(true);
+        addToDrawer(drawer);
     }
 }

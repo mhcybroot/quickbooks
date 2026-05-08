@@ -4,6 +4,8 @@ import com.example.quickbooksimporter.service.QuickBooksConnectionService;
 import com.example.quickbooksimporter.service.QuickBooksConnectionStatus;
 import com.example.quickbooksimporter.service.QuickBooksGateway;
 import com.example.quickbooksimporter.service.QuickBooksIncomeAccount;
+import com.example.quickbooksimporter.service.LegalUrlService;
+import com.example.quickbooksimporter.ui.components.LegalLinks;
 import com.example.quickbooksimporter.ui.components.UiComponents;
 import com.vaadin.flow.component.Text;
 import com.vaadin.flow.component.button.Button;
@@ -25,7 +27,9 @@ import java.util.List;
 @PermitAll
 public class SettingsView extends VerticalLayout {
 
-    public SettingsView(QuickBooksConnectionService connectionService, QuickBooksGateway quickBooksGateway) {
+    public SettingsView(QuickBooksConnectionService connectionService,
+                        QuickBooksGateway quickBooksGateway,
+                        LegalUrlService legalUrlService) {
         QuickBooksConnectionStatus status = connectionService.getStatus();
         addClassName("corp-page");
         setSpacing(true);
@@ -42,6 +46,23 @@ public class SettingsView extends VerticalLayout {
         connectionRow.setWidthFull();
         connectionRow.setFlexGrow(1);
         add(connectionRow, connect, new Text("Use your Intuit app credentials in application properties or environment variables."));
+
+        Paragraph legalSummary = new Paragraph("Production QuickBooks submission URLs:");
+        legalSummary.addClassName("corp-muted");
+        Anchor eulaUrl = new Anchor(legalUrlService.eulaUrl(), legalUrlService.eulaUrl());
+        eulaUrl.setTarget("_blank");
+        eulaUrl.addClassName("legal-url-link");
+        Anchor privacyUrl = new Anchor(legalUrlService.privacyUrl(), legalUrlService.privacyUrl());
+        privacyUrl.setTarget("_blank");
+        privacyUrl.addClassName("legal-url-link");
+        add(UiComponents.card(
+                new H3("Legal URLs"),
+                legalSummary,
+                new Paragraph("End-user license agreement URL"),
+                eulaUrl,
+                new Paragraph("Privacy policy URL"),
+                privacyUrl,
+                LegalLinks.inline(legalUrlService)));
 
         Grid<QuickBooksIncomeAccount> accountsGrid = new Grid<>(QuickBooksIncomeAccount.class, false);
         accountsGrid.addColumn(QuickBooksIncomeAccount::id).setHeader("Account ID").setAutoWidth(true);

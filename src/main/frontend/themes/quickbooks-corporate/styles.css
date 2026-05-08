@@ -159,6 +159,16 @@ h1, h2, h3, h4, h5, h6, p, span, label {
   color: var(--corp-text);
 }
 
+a {
+  color: #0f4c81;
+  text-decoration: none;
+}
+
+a:hover {
+  color: #0b3b63;
+  text-decoration: underline;
+}
+
 vaadin-text-field::part(input-field),
 vaadin-combo-box::part(input-field),
 vaadin-upload::part(drop-label),
@@ -250,4 +260,23 @@ vaadin-button[theme~="tertiary-inline"]::part(label) {
   .login-card {
     grid-template-columns: 1fr;
   }
+}
+
+.legal-links {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.legal-inline-link {
+  color: #0f4c81;
+  font-weight: 600;
+}
+
+.legal-url-link {
+  color: #0f4c81;
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.94rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }

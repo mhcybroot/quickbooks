@@ -1,5 +1,7 @@
 package com.example.quickbooksimporter.ui;
 
+import com.example.quickbooksimporter.service.LegalUrlService;
+import com.example.quickbooksimporter.ui.components.LegalLinks;
 import com.vaadin.flow.component.login.LoginForm;
 import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.Paragraph;
@@ -19,7 +21,7 @@ public class LoginView extends VerticalLayout implements BeforeEnterObserver {
 
     private final LoginForm login = new LoginForm();
 
-    public LoginView() {
+    public LoginView(LegalUrlService legalUrlService) {
         setSizeFull();
         addClassName("login-shell");
         login.setAction("login");
@@ -36,9 +38,12 @@ public class LoginView extends VerticalLayout implements BeforeEnterObserver {
         intro.add(eyebrow, title, body);
         intro.setJustifyContentMode(FlexComponent.JustifyContentMode.CENTER);
 
-        VerticalLayout formWrap = new VerticalLayout(login);
+        Paragraph legalNotice = new Paragraph("By signing in or connecting QuickBooks, you agree to the End-User License Agreement and Privacy Policy.");
+        legalNotice.addClassName("corp-muted");
+
+        VerticalLayout formWrap = new VerticalLayout(login, legalNotice, LegalLinks.inline(legalUrlService));
         formWrap.setPadding(false);
-        formWrap.setSpacing(false);
+        formWrap.setSpacing(true);
         formWrap.setJustifyContentMode(FlexComponent.JustifyContentMode.CENTER);
         formWrap.setAlignItems(FlexComponent.Alignment.CENTER);
         login.getStyle().set("max-width", "420px");

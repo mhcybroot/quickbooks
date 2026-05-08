@@ -8,7 +8,7 @@ import org.springframework.web.client.RestClient.Builder;
 import org.springframework.web.client.RestClient;
 
 @Configuration
-@EnableConfigurationProperties({AppSecurityProperties.class, QuickBooksProperties.class})
+@EnableConfigurationProperties({AppSecurityProperties.class, QuickBooksProperties.class, AppPublicProperties.class})
 public class AppConfig {
 
     @Bean
