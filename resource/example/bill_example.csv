@@ -1,0 +1,4 @@
+BillNo,Vendor,TxnDate,DueDate,APAccount,Item,Category,Description,Quantity,Rate,Amount,Taxable,TaxCode,TaxRate
+BILL-EX-3001,Example Vendor,08/05/2026,09/04/2026,Accounts Payable (A/P),,Supplies,Monthly supplies purchase,1,250.00,250.00,N,NON,0
+BILL-EX-3001,Example Vendor,08/05/2026,09/04/2026,Accounts Payable (A/P),,Utilities,Service charge,1,100.00,100.00,N,NON,0
+BILL-EX-3002,Power Vendor,08/06/2026,09/05/2026,Accounts Payable (A/P),,Utilities,Electricity bill,1,450.00,450.00,N,NON,0

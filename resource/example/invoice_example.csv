@@ -1,0 +1,4 @@
+*InvoiceNo,*Customer,*InvoiceDate,*DueDate,Terms,Location,Memo,Item(Product/Service),ItemDescription,ItemQuantity,ItemRate,*ItemAmount,Taxable,TaxRate,Service Date
+INV-EX-1001,Example Customer,08/01/2026,08/31/2026,Net 30,Dhaka,Example grouped invoice,Consulting,Advisory service,1,300.00,300.00,N,0%,08/01/2026
+INV-EX-1001,Example Customer,08/01/2026,08/31/2026,Net 30,Dhaka,Example grouped invoice,Training,Onboarding session,1,150.00,150.00,N,0%,08/01/2026
+INV-EX-1002,Second Customer,08/02/2026,09/01/2026,Net 30,Chattogram,Single line invoice,Managed Service,Support retainer,1,500.00,500.00,N,0%,08/02/2026

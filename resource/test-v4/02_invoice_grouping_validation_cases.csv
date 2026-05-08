@@ -1,0 +1,9 @@
+*InvoiceNo,*Customer,*InvoiceDate,*DueDate,Terms,Location,Memo,Item(Product/Service),ItemDescription,ItemQuantity,ItemRate,*ItemAmount,Taxable,TaxRate,Service Date
+INV4-300201,Acorn Labs V4,08/04/2026,09/03/2026,Net 30,Dhaka,Control valid row,Consulting,Control row,1,100.00,100.00,N,0%,08/04/2026
+,Acorn Labs V4,08/04/2026,09/03/2026,Net 30,Dhaka,Missing invoice number,Consulting,Missing key,1,100.00,100.00,N,0%,08/04/2026
+INV4-300203,,08/04/2026,09/03/2026,Net 30,Dhaka,Missing customer,Consulting,Missing customer,1,100.00,100.00,N,0%,08/04/2026
+INV4-300204,Acorn Labs V4,,09/03/2026,Net 30,Dhaka,Missing invoice date,Consulting,Missing date,1,100.00,100.00,N,0%,08/04/2026
+INV4-300205,Acorn Labs V4,08/04/2026,09/03/2026,Net 30,Dhaka,Missing item,,,1,100.00,100.00,N,0%,08/04/2026
+INV4-300206,Acorn Labs V4,08/04/2026,09/03/2026,Net 30,Dhaka,Positive tax unsupported,Consulting,Taxed row,1,100.00,100.00,Y,5%,08/04/2026
+INV4-300207,Acorn Labs V4,08/04/2026,09/03/2026,Net 30,Dhaka,Grouped memo mismatch A,Consulting,Grouped row A,1,60.00,60.00,N,0%,08/04/2026
+INV4-300207,Acorn Labs V4,08/04/2026,09/03/2026,Net 30,Dhaka,Grouped memo mismatch B,Training,Grouped row B,1,40.00,40.00,N,0%,08/04/2026

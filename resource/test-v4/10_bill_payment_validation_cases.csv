@@ -1,0 +1,9 @@
+Vendor,PaymentDate,ReferenceNo,PaymentAccount,BillNo,AppliedAmount,PaymentAmount
+Supply Chain Hub V4,08/14/2026,BPV4-001,Checking,BILLV4-300801,140.00,140.00
+Supply Chain Hub V4,08/18/2026,BPV4-002,Checking,BILLV4-300801,140.00,140.00
+Urban Electric Works V4,08/15/2026,BPV4-003,Checking,BILLV4-300802,430.00,430.00
+,08/15/2026,BPV4-004,Checking,BILLV4-300802,50.00,50.00
+Urban Electric Works V4,,BPV4-005,Checking,BILLV4-300802,50.00,50.00
+Urban Electric Works V4,08/15/2026,BPV4-006,,BILLV4-300802,50.00,50.00
+Urban Electric Works V4,08/15/2026,BPV4-007,Checking,,50.00,50.00
+Urban Electric Works V4,08/15/2026,BPV4-008,Checking,BILL-NOT-FOUND,50.00,50.00

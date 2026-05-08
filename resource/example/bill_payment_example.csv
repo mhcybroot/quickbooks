@@ -1,0 +1,4 @@
+Vendor,PaymentDate,ReferenceNo,PaymentAccount,BillNo,AppliedAmount,PaymentAmount
+Example Vendor,08/10/2026,BP-EX-4001,Checking,BILL-EX-3001,200.00,200.00
+Example Vendor,08/12/2026,BP-EX-4002,Checking,BILL-EX-3001,150.00,150.00
+Power Vendor,08/11/2026,BP-EX-4003,Checking,BILL-EX-3002,450.00,450.00

@@ -1,0 +1,6 @@
+*InvoiceNo,*Customer,*InvoiceDate,*DueDate,Terms,Location,Memo,Item(Product/Service),ItemDescription,ItemQuantity,ItemRate,*ItemAmount,Taxable,TaxRate,Service Date
+INV4-300101,Evergreen Foods V4,08/01/2026,08/31/2026,Net 30,Dhaka,Grouped invoice control,Consulting,Monthly advisory retainer,2,150.00,300.00,N,0%,08/01/2026
+INV4-300101,Evergreen Foods V4,08/01/2026,08/31/2026,Net 30,Dhaka,Grouped invoice control,Training,Store manager workshop,1,120.00,120.00,N,0%,08/01/2026
+INV4-300102,Maple Retail V4,08/02/2026,09/01/2026,Net 30,Chattogram,Single line control,Setup,POS rollout assistance,1,420.00,420.00,N,0%,08/02/2026
+INV4-300103,Skyline Bistro V4,08/03/2026,09/02/2026,Net 30,Dhaka,Multi-line service,Managed Service,Support retainers,1,260.00,260.00,N,0%,08/03/2026
+INV4-300103,Skyline Bistro V4,08/03/2026,09/02/2026,Net 30,Dhaka,Multi-line service,Hardware Setup,Kitchen terminal setup,2,70.00,140.00,N,0%,08/03/2026

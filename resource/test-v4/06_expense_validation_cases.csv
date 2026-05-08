@@ -1,0 +1,9 @@
+Vendor,TxnDate,ReferenceNo,PaymentAccount,Category,Description,Amount
+Metro Fuel Center V4,08/04/2026,EXPCV4-001,Checking,Supplies,Control valid row,125.00
+,08/04/2026,EXPCV4-002,Checking,Supplies,Missing vendor,125.00
+Metro Fuel Center V4,,EXPCV4-003,Checking,Supplies,Missing transaction date,125.00
+Metro Fuel Center V4,08/04/2026,EXPCV4-004,,Supplies,Missing payment account,125.00
+Metro Fuel Center V4,08/04/2026,EXPCV4-005,Checking,,Missing category,125.00
+Metro Fuel Center V4,08/04/2026,EXPCV4-006,Checking,Supplies,Missing amount,
+Metro Fuel Center V4,08/04/2026,EXPCV4-007,Checking,Supplies,Negative amount,-45.00
+Metro Fuel Center V4,08/04/2026,EXPCV4-008,Unknown Bank,Supplies,Unknown payment account,60.00

@@ -1,0 +1,6 @@
+Vendor,TxnDate,ReferenceNo,PaymentAccount,Category,Description,Amount
+Metro Fuel Center V4,08/04/2026,EXPV4-001,Checking,Supplies,Pantry restock and cleaning items,245.40
+North Grid Power V4,08/05/2026,EXPV4-002,Checking,Utilities,Branch electricity bill,525.00
+City Courier V4,08/06/2026,EXPV4-003,Checking,Shipping,Document dispatch charges,96.25
+Orbit Workspace V4,08/07/2026,EXPV4-004,Checking,Rent or Lease,Shared office monthly fee,1325.00
+FiberNet Business V4,2026-08-08,EXPV4-005,Checking,Utilities,Internet renewal,110.00

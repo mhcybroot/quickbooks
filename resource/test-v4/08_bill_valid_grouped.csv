@@ -1,0 +1,5 @@
+BillNo,Vendor,TxnDate,DueDate,APAccount,Item,Category,Description,Quantity,Rate,Amount,Taxable,TaxCode,TaxRate
+BILLV4-300801,Supply Chain Hub V4,08/11/2026,09/10/2026,Accounts Payable (A/P),,Supplies,Office consumables batch,1,185.00,185.00,N,NON,0
+BILLV4-300801,Supply Chain Hub V4,08/11/2026,09/10/2026,Accounts Payable (A/P),,Utilities,Warehouse service fee,1,95.00,95.00,N,NON,0
+BILLV4-300802,Urban Electric Works V4,08/12/2026,09/11/2026,Accounts Payable (A/P),,Utilities,Branch power maintenance,1,430.00,430.00,N,NON,0
+BILLV4-300803,Metro Logistics V4,08/13/2026,09/12/2026,Accounts Payable (A/P),,Shipping,Dispatch services,2,42.50,85.00,N,NON,0

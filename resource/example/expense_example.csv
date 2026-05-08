@@ -1,0 +1,4 @@
+Vendor,TxnDate,ReferenceNo,PaymentAccount,Category,Description,Amount
+Fuel Station,08/07/2026,EXP-EX-6001,Checking,Supplies,Fuel and transport supplies,120.50
+Internet Provider,08/07/2026,EXP-EX-6002,Checking,Utilities,Monthly internet bill,95.00
+Office Market,08/08/2026,EXP-EX-6003,Checking,Supplies,Office consumables,210.00

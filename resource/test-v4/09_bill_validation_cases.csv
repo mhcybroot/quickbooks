@@ -1,0 +1,7 @@
+BillNo,Vendor,TxnDate,DueDate,APAccount,Item,Category,Description,Quantity,Rate,Amount,Taxable,TaxCode,TaxRate
+BILLCV4-001,Supply Chain Hub V4,08/11/2026,09/10/2026,Accounts Payable (A/P),,Supplies,Control valid row,1,100.00,100.00,N,NON,0
+,Supply Chain Hub V4,08/11/2026,09/10/2026,Accounts Payable (A/P),,Supplies,Missing bill number,1,100.00,100.00,N,NON,0
+BILLCV4-003,,08/11/2026,09/10/2026,Accounts Payable (A/P),,Supplies,Missing vendor,1,100.00,100.00,N,NON,0
+BILLCV4-004,Supply Chain Hub V4,08/11/2026,09/10/2026,, ,Supplies,Missing AP account,1,100.00,100.00,N,NON,0
+BILLCV4-005,Supply Chain Hub V4,08/11/2026,09/10/2026,Accounts Payable (A/P),,,Missing item and category,1,100.00,100.00,N,NON,0
+BILLCV4-006,Supply Chain Hub V4,08/11/2026,09/10/2026,Accounts Payable (A/P),,Supplies,Taxable missing tax code,1,100.00,100.00,Y,,5

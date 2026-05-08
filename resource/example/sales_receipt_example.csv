@@ -1,0 +1,4 @@
+ReceiptNo,Customer,TxnDate,PaymentMethod,DepositAccount,Item,Description,Quantity,Rate,Amount,Taxable,TaxCode,TaxRate
+SR-EX-2001,Example Walk-in,08/03/2026,Cash,Checking,Consulting,Point-of-sale consulting,1,120.00,120.00,N,NON,0
+SR-EX-2001,Example Walk-in,08/03/2026,Cash,Checking,Installation,Hardware setup,1,80.00,80.00,N,NON,0
+SR-EX-2002,Retail Outlet,08/04/2026,Card,Checking,Training,Cashier training,1,200.00,200.00,N,NON,0

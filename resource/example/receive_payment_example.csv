@@ -1,0 +1,4 @@
+Customer,PaymentDate,ReferenceNo,PaymentMethod,DepositToAccount,InvoiceNo,AppliedAmount,PaymentAmount
+Example Customer,08/08/2026,RP-EX-5001,Bank Transfer,Checking,INV-EX-1001,250.00,250.00
+Example Customer,08/10/2026,RP-EX-5002,Bank Transfer,Checking,INV-EX-1001,200.00,200.00
+Second Customer,08/09/2026,RP-EX-5003,Card,Checking,INV-EX-1002,500.00,500.00
