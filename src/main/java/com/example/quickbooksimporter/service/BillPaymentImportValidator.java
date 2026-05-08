@@ -3,6 +3,7 @@ package com.example.quickbooksimporter.service;
 import com.example.quickbooksimporter.domain.BillPaymentRowValidationResult;
 import com.example.quickbooksimporter.domain.ImportRowStatus;
 import com.example.quickbooksimporter.domain.NormalizedBillPayment;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -20,6 +21,13 @@ public class BillPaymentImportValidator {
     }
 
     public BillPaymentRowValidationResult validate(int rowNumber, Map<String, String> rawData, NormalizedBillPayment payment) {
+        return validate(rowNumber, rawData, payment, BigDecimal.ZERO);
+    }
+
+    public BillPaymentRowValidationResult validate(int rowNumber,
+                                                   Map<String, String> rawData,
+                                                   NormalizedBillPayment payment,
+                                                   BigDecimal alreadyAllocatedInPreview) {
         List<String> errors = new ArrayList<>();
         if (payment == null) {
             errors.add("Bill payment could not be parsed");
@@ -45,8 +53,11 @@ public class BillPaymentImportValidator {
             if (billRef == null) errors.add("Bill not found in QuickBooks");
             else {
                 if (!StringUtils.equalsIgnoreCase(payment.vendor(), billRef.vendorName())) errors.add("Bill vendor does not match payment vendor");
-                if (billRef.openBalance() == null || billRef.openBalance().signum() <= 0) errors.add("Bill is already fully paid or closed");
-                else if (payment.application().appliedAmount().compareTo(billRef.openBalance()) > 0) errors.add("Applied amount exceeds bill open balance");
+                BigDecimal openBalance = billRef.openBalance() == null ? BigDecimal.ZERO : billRef.openBalance();
+                BigDecimal allocatedInPreview = alreadyAllocatedInPreview == null ? BigDecimal.ZERO : alreadyAllocatedInPreview;
+                BigDecimal remainingBalance = openBalance.subtract(allocatedInPreview).max(BigDecimal.ZERO);
+                if (remainingBalance.signum() <= 0) errors.add("Bill is already fully paid or closed");
+                else if (payment.application().appliedAmount().compareTo(remainingBalance) > 0) errors.add("Applied amount exceeds bill open balance");
             }
             if (gateway.findAccountIdByName(realmId, payment.paymentAccount()) == null) errors.add("Payment account not found in QuickBooks");
             if (gateway.billPaymentExists(realmId, payment.vendor(), payment.paymentDate(), payment.referenceNo(), payment.paymentAmount())) {

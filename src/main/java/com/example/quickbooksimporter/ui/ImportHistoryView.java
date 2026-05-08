@@ -35,6 +35,7 @@ public class ImportHistoryView extends VerticalLayout {
     private final ComboBox<ImportRunStatus> statusFilter = new ComboBox<>("Run Status");
     private final DatePicker dateFilter = new DatePicker("Created On/After");
     private final TextField fileFilter = new TextField("Source File");
+    private final Paragraph runScopeSummary = new Paragraph("Showing the latest runs across all import types.");
 
     public ImportHistoryView(ImportHistoryService historyService) {
         this.historyService = historyService;
@@ -57,6 +58,7 @@ public class ImportHistoryView extends VerticalLayout {
 
         Button apply = new Button("Apply Filters", event -> refreshRuns());
         Button reset = new Button("Reset", event -> {
+            batchGrid.deselectAll();
             entityFilter.clear();
             statusFilter.clear();
             dateFilter.clear();
@@ -80,6 +82,17 @@ public class ImportHistoryView extends VerticalLayout {
         batchGrid.setItems(historyService.recentBatches());
         batchGrid.setHeight("220px");
         batchGrid.addClassName("corp-grid");
+        batchGrid.asSingleSelect().addValueChangeListener(event -> {
+            ImportBatchEntity selectedBatch = event.getValue();
+            if (selectedBatch == null) {
+                refreshRuns();
+                return;
+            }
+            List<ImportRunEntity> batchRuns = historyService.runsForBatch(selectedBatch.getId());
+            runGrid.setItems(batchRuns);
+            rowGrid.setItems(List.of());
+            runScopeSummary.setText("Showing " + batchRuns.size() + " runs for batch " + selectedBatch.getBatchName() + ".");
+        });
         add(UiComponents.card(new H3("Recent Batches"), batchGrid));
     }
 
@@ -113,7 +126,7 @@ public class ImportHistoryView extends VerticalLayout {
         VerticalLayout detail = UiComponents.card(new H3("Row Results"), rowGrid);
         detail.setWidth("58%");
         detail.setSizeFull();
-        VerticalLayout runsCard = UiComponents.card(new H3("Run Results"), runGrid);
+        VerticalLayout runsCard = UiComponents.card(new H3("Run Results"), runScopeSummary, runGrid);
         runsCard.setWidth("42%");
         runsCard.setMinWidth("480px");
 
@@ -133,5 +146,6 @@ public class ImportHistoryView extends VerticalLayout {
         runGrid.setItems(runs);
         rowGrid.setItems(List.of());
         batchGrid.setItems(historyService.recentBatches());
+        runScopeSummary.setText("Showing " + runs.size() + " filtered runs across all batches and standalone imports.");
     }
 }

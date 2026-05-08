@@ -49,6 +49,7 @@ public class ImportWorkflowFacade {
     private final BillImportService billImportService;
     private final BillPaymentImportService billPaymentImportService;
     private final ImportRunRepository importRunRepository;
+    private final InvoiceGroupingPreferenceService invoiceGroupingPreferenceService;
 
     public ImportWorkflowFacade(InvoiceCsvParser parser,
                                 CsvMappingProfileService invoiceProfiles,
@@ -63,7 +64,8 @@ public class ImportWorkflowFacade {
                                 SalesReceiptImportService salesReceiptImportService,
                                 BillImportService billImportService,
                                 BillPaymentImportService billPaymentImportService,
-                                ImportRunRepository importRunRepository) {
+                                ImportRunRepository importRunRepository,
+                                InvoiceGroupingPreferenceService invoiceGroupingPreferenceService) {
         this.parser = parser;
         this.invoiceProfiles = invoiceProfiles;
         this.paymentProfiles = paymentProfiles;
@@ -78,6 +80,7 @@ public class ImportWorkflowFacade {
         this.billImportService = billImportService;
         this.billPaymentImportService = billPaymentImportService;
         this.importRunRepository = importRunRepository;
+        this.invoiceGroupingPreferenceService = invoiceGroupingPreferenceService;
     }
 
     public ParsedCsvDocument parse(byte[] bytes) {
@@ -134,6 +137,15 @@ public class ImportWorkflowFacade {
                                         byte[] bytes,
                                         Long profileId,
                                         Map<String, String> mappingOverride) {
+        return preview(entityType, fileName, bytes, profileId, mappingOverride, ImportPreviewOptions.defaults());
+    }
+
+    public ImportPreviewSummary preview(EntityType entityType,
+                                        String fileName,
+                                        byte[] bytes,
+                                        Long profileId,
+                                        Map<String, String> mappingOverride,
+                                        ImportPreviewOptions options) {
         ParsedCsvDocument document = parse(bytes);
         Map<String, String> mapping = profileId == null
                 ? defaultMapping(entityType, document.headers())
@@ -145,10 +157,20 @@ public class ImportWorkflowFacade {
 
         return switch (entityType) {
             case INVOICE -> summarizeInvoicePreview(
-                    invoiceImportService.preview(fileName, bytes, toInvoiceMapping(mapping)),
+                    invoiceImportService.preview(
+                            fileName,
+                            bytes,
+                            toInvoiceMapping(mapping),
+                            options.invoiceGroupingEnabled() == null
+                                    ? invoiceGroupingPreferenceService.isGroupingEnabled()
+                                    : options.invoiceGroupingEnabled()),
                     suggestedProfile);
             case PAYMENT -> summarizePaymentPreview(
-                    paymentImportService.preview(fileName, bytes, toPaymentMapping(mapping)),
+                    paymentImportService.preview(
+                            fileName,
+                            bytes,
+                            toPaymentMapping(mapping),
+                            options.draftInvoiceRefs() == null ? Map.of() : options.draftInvoiceRefs()),
                     suggestedProfile);
             case EXPENSE -> summarizeExpensePreview(
                     expenseImportService.preview(fileName, bytes, toExpenseMapping(mapping)),
@@ -193,6 +215,30 @@ public class ImportWorkflowFacade {
                     .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
             default -> Set.of();
         };
+    }
+
+    public Map<String, QuickBooksInvoiceRef> draftInvoiceRefs(EntityType entityType, Object rawPreview) {
+        if (entityType != EntityType.INVOICE) {
+            return Map.of();
+        }
+        ImportPreview preview = (ImportPreview) rawPreview;
+        if (!preview.groupingEnabled()) {
+            return Map.of();
+        }
+        Map<String, QuickBooksInvoiceRef> refs = new java.util.LinkedHashMap<>();
+        preview.validations().stream()
+                .filter(validation -> validation.status() == ImportRowStatus.READY && validation.invoice() != null)
+                .forEach(validation -> refs.put(
+                        validation.invoice().invoiceNo(),
+                        new QuickBooksInvoiceRef(
+                                null,
+                                validation.invoice().invoiceNo(),
+                                null,
+                                validation.invoice().customer(),
+                                validation.invoice().lines().stream()
+                                        .map(line -> line.amount() == null ? java.math.BigDecimal.ZERO : line.amount())
+                                        .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add))));
+        return refs;
     }
 
     public Set<String> requiredParentIdentifiers(EntityType entityType, Object rawPreview) {

@@ -22,6 +22,21 @@ public class PaymentImportValidator {
     }
 
     public PaymentRowValidationResult validate(int rowNumber, Map<String, String> rawData, NormalizedPayment payment) {
+        return validate(rowNumber, rawData, payment, BigDecimal.ZERO, null);
+    }
+
+    public PaymentRowValidationResult validate(int rowNumber,
+                                               Map<String, String> rawData,
+                                               NormalizedPayment payment,
+                                               BigDecimal alreadyAllocatedInPreview) {
+        return validate(rowNumber, rawData, payment, alreadyAllocatedInPreview, null);
+    }
+
+    public PaymentRowValidationResult validate(int rowNumber,
+                                               Map<String, String> rawData,
+                                               NormalizedPayment payment,
+                                               BigDecimal alreadyAllocatedInPreview,
+                                               QuickBooksInvoiceRef draftInvoiceRef) {
         List<String> errors = new ArrayList<>();
         if (payment == null) {
             errors.add("Payment could not be parsed");
@@ -55,7 +70,9 @@ public class PaymentImportValidator {
 
         String realmId = connectionService.getConnection().map(connection -> connection.getRealmId()).orElse(null);
         if (errors.isEmpty() && realmId != null) {
-            QuickBooksInvoiceRef invoiceRef = gateway.findInvoiceByDocNumber(realmId, payment.application().invoiceNo());
+            QuickBooksInvoiceRef invoiceRef = draftInvoiceRef != null
+                    ? draftInvoiceRef
+                    : gateway.findInvoiceByDocNumber(realmId, payment.application().invoiceNo());
             if (invoiceRef == null) {
                 errors.add("Invoice not found in QuickBooks");
             } else {
@@ -63,9 +80,11 @@ public class PaymentImportValidator {
                     errors.add("Invoice customer does not match payment customer");
                 }
                 BigDecimal openBalance = invoiceRef.openBalance() == null ? BigDecimal.ZERO : invoiceRef.openBalance();
-                if (openBalance.signum() <= 0) {
+                BigDecimal allocatedInPreview = alreadyAllocatedInPreview == null ? BigDecimal.ZERO : alreadyAllocatedInPreview;
+                BigDecimal remainingBalance = openBalance.subtract(allocatedInPreview).max(BigDecimal.ZERO);
+                if (remainingBalance.signum() <= 0) {
                     errors.add("Invoice is already fully paid or closed");
-                } else if (payment.application().appliedAmount().compareTo(openBalance) > 0) {
+                } else if (payment.application().appliedAmount().compareTo(remainingBalance) > 0) {
                     errors.add("Applied amount exceeds invoice open balance");
                 }
             }

@@ -7,6 +7,7 @@ import com.example.quickbooksimporter.domain.NormalizedInvoiceField;
 import com.example.quickbooksimporter.service.CsvMappingProfileService;
 import com.example.quickbooksimporter.service.ImportExecutionResult;
 import com.example.quickbooksimporter.service.ImportWorkflowFacade;
+import com.example.quickbooksimporter.service.InvoiceGroupingPreferenceService;
 import com.example.quickbooksimporter.service.InvoiceCsvParser;
 import com.example.quickbooksimporter.service.InvoiceImportService;
 import com.example.quickbooksimporter.service.MappingProfileSummary;
@@ -48,16 +49,19 @@ public class InvoiceImportView extends VerticalLayout {
     private final CsvMappingProfileService mappingProfileService;
     private final InvoiceImportService invoiceImportService;
     private final ImportWorkflowFacade workflowFacade;
+    private final InvoiceGroupingPreferenceService invoiceGroupingPreferenceService;
 
     private final MemoryBuffer uploadBuffer = new MemoryBuffer();
     private final Upload upload = new Upload(uploadBuffer);
     private final ComboBox<MappingProfileSummary> savedProfiles = new ComboBox<>("Saved Mapping Profiles");
     private final ComboBox<ImportRowStatus> previewFilter = new ComboBox<>("Preview Filter");
     private final TextField profileName = new TextField("New Profile Name");
+    private final Button groupingToggle = new Button();
     private final FormLayout mappingForm = new FormLayout();
     private final Grid<ImportPreviewRow> previewGrid = new Grid<>(ImportPreviewRow.class, false);
     private final Paragraph summary = new Paragraph("Upload a CSV to begin.");
     private final Paragraph mappingHint = new Paragraph("Expected headers will be suggested automatically after upload.");
+    private final Paragraph groupingHint = new Paragraph();
     private final Anchor downloadAnchor = new Anchor();
     private final HorizontalLayout kpiRow = new HorizontalLayout();
     private final VerticalLayout kpiTotal = UiComponents.softCard();
@@ -70,15 +74,19 @@ public class InvoiceImportView extends VerticalLayout {
     private String uploadedFileName;
     private List<String> currentHeaders = List.of();
     private ImportPreview currentPreview;
+    private boolean invoiceGroupingEnabled;
 
     public InvoiceImportView(InvoiceCsvParser parser,
                              CsvMappingProfileService mappingProfileService,
                              InvoiceImportService invoiceImportService,
-                             ImportWorkflowFacade workflowFacade) {
+                             ImportWorkflowFacade workflowFacade,
+                             InvoiceGroupingPreferenceService invoiceGroupingPreferenceService) {
         this.parser = parser;
         this.mappingProfileService = mappingProfileService;
         this.invoiceImportService = invoiceImportService;
         this.workflowFacade = workflowFacade;
+        this.invoiceGroupingPreferenceService = invoiceGroupingPreferenceService;
+        this.invoiceGroupingEnabled = invoiceGroupingPreferenceService.isGroupingEnabled();
 
         setSizeFull();
         addClassName("corp-page");
@@ -140,10 +148,12 @@ public class InvoiceImportView extends VerticalLayout {
         Button useLastProfile = new Button("Use Last Profile", event -> workflowFacade
                 .lastUsedProfile(com.example.quickbooksimporter.domain.EntityType.INVOICE)
                 .ifPresent(savedProfiles::setValue));
-        HorizontalLayout profileRow = new HorizontalLayout(savedProfiles, profileName, useLastProfile);
+        groupingToggle.addClickListener(event -> toggleInvoiceGrouping());
+        updateGroupingToggleUi();
+        HorizontalLayout profileRow = new HorizontalLayout(savedProfiles, profileName, useLastProfile, groupingToggle);
         profileRow.setWidthFull();
         profileRow.expand(savedProfiles, profileName);
-        add(UiComponents.card(UiComponents.sectionTitle("Stage 2: Mapping Profile"), profileRow, mappingHint));
+        add(UiComponents.card(UiComponents.sectionTitle("Stage 2: Mapping Profile"), profileRow, mappingHint, groupingHint));
     }
 
     private void configureMappingForm() {
@@ -203,11 +213,11 @@ public class InvoiceImportView extends VerticalLayout {
             notifyWarning("Upload a CSV file first.");
             return;
         }
-        currentPreview = invoiceImportService.preview(uploadedFileName, uploadedBytes, currentMapping());
+        currentPreview = invoiceImportService.preview(uploadedFileName, uploadedBytes, currentMapping(), invoiceGroupingEnabled);
         applyPreviewFilter();
         long readyCount = currentPreview.rows().stream().filter(row -> row.status() == ImportRowStatus.READY).count();
         long invalidCount = currentPreview.rows().stream().filter(row -> row.status() == ImportRowStatus.INVALID).count();
-        summary.setText("Preview complete: " + readyCount + " ready, " + invalidCount + " invalid.");
+        summary.setText("Preview complete: " + readyCount + " ready, " + invalidCount + " invalid. Grouping is " + (invoiceGroupingEnabled ? "enabled" : "disabled") + ".");
         refreshKpis(currentPreview.rows().size(), (int) readyCount, (int) invalidCount);
         downloadAnchor.setHref(new StreamResource("normalized-" + uploadedFileName,
                 () -> new java.io.ByteArrayInputStream(currentPreview.exportCsv().getBytes(StandardCharsets.UTF_8))));
@@ -264,6 +274,35 @@ public class InvoiceImportView extends VerticalLayout {
                 .count();
         mappingHint.setText("Mapping coverage: " + mappedFields + "/" + fieldSelectors.size()
                 + " fields mapped. Review required invoice headers before validation.");
+    }
+
+    private void toggleInvoiceGrouping() {
+        invoiceGroupingEnabled = !invoiceGroupingEnabled;
+        invoiceGroupingPreferenceService.saveGroupingEnabled(invoiceGroupingEnabled);
+        currentPreview = null;
+        previewGrid.setItems(List.of());
+        downloadAnchor.setVisible(false);
+        summary.setText("Invoice grouping " + (invoiceGroupingEnabled ? "enabled" : "disabled") + ". Run preview again to apply the change.");
+        refreshKpis(uploadedBytes == null ? 0 : refreshTotalRows(), 0, 0);
+        updateGroupingToggleUi();
+    }
+
+    private void updateGroupingToggleUi() {
+        groupingToggle.setText(invoiceGroupingEnabled ? "Invoice Grouping: On" : "Invoice Grouping: Off");
+        groupingHint.setText(invoiceGroupingEnabled
+                ? "Repeated invoice numbers will be merged into one invoice with multiple lines. This setting is remembered."
+                : "Each CSV row stays independent. Turn grouping on to merge repeated invoice numbers before validation and import.");
+    }
+
+    private int refreshTotalRows() {
+        if (uploadedBytes == null) {
+            return 0;
+        }
+        try {
+            return parser.parse(new java.io.ByteArrayInputStream(uploadedBytes)).rows().size();
+        } catch (Exception exception) {
+            return 0;
+        }
     }
 
     private void refreshKpis(int totalRows, int readyRows, int invalidRows) {

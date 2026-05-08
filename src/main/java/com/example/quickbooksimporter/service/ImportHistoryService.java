@@ -31,6 +31,13 @@ public class ImportHistoryService {
         return importBatchRepository.findTop20ByOrderByCreatedAtDesc();
     }
 
+    public List<ImportRunEntity> runsForBatch(Long batchId) {
+        if (batchId == null) {
+            return List.of();
+        }
+        return importRunRepository.findByBatchIdOrderByBatchOrderAscCreatedAtAsc(batchId);
+    }
+
     public List<ImportRunEntity> filterRuns(EntityType entityType,
                                             ImportRunStatus status,
                                             LocalDate createdOnOrAfter,

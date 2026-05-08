@@ -3,9 +3,11 @@ package com.example.quickbooksimporter.ui;
 import com.example.quickbooksimporter.domain.EntityType;
 import com.example.quickbooksimporter.persistence.ImportBatchEntity;
 import com.example.quickbooksimporter.service.ImportBatchService;
+import com.example.quickbooksimporter.service.ImportPreviewOptions;
 import com.example.quickbooksimporter.service.ImportPreviewSummary;
 import com.example.quickbooksimporter.service.ImportWorkflowFacade;
 import com.example.quickbooksimporter.service.MappingProfileSummary;
+import com.example.quickbooksimporter.service.QuickBooksInvoiceRef;
 import com.example.quickbooksimporter.service.QuickBooksConnectionService;
 import com.example.quickbooksimporter.service.QuickBooksConnectionStatus;
 import com.example.quickbooksimporter.ui.components.UiComponents;
@@ -33,6 +35,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -210,7 +214,7 @@ public class BatchImportView extends VerticalLayout {
             notifyWarning("Select a file first.");
             return;
         }
-        validateItem(selectedItem);
+        validateItem(selectedItem, draftInvoiceRefsForBatch(selectedItem));
         refreshGrid();
         refreshDetailPanel();
     }
@@ -221,7 +225,10 @@ public class BatchImportView extends VerticalLayout {
             return;
         }
         ensureBatch();
-        items.forEach(this::validateItem);
+        items.stream()
+                .sorted(Comparator.comparingInt((BatchDraftItem item) -> item.getEntityType().batchPriority())
+                        .thenComparingInt(BatchDraftItem::getPosition))
+                .forEach(item -> validateItem(item, draftInvoiceRefsForBatch(item)));
         batchService.updateValidationSnapshot(activeBatchId, items.size(),
                 (int) items.stream().filter(item -> item.getPreviewSummary() != null).count(),
                 (int) items.stream().filter(item -> item.getPreviewSummary() != null && !item.getPreviewSummary().hasBlockingIssues()).count());
@@ -269,9 +276,15 @@ public class BatchImportView extends VerticalLayout {
         notifySuccess("Batch run completed. Review history for row-level outcomes.");
     }
 
-    private void validateItem(BatchDraftItem item) {
+    private void validateItem(BatchDraftItem item, Map<String, QuickBooksInvoiceRef> draftInvoiceRefs) {
         Long profileId = item.getSelectedProfile() == null ? null : item.getSelectedProfile().id();
-        ImportPreviewSummary preview = workflowFacade.preview(item.getEntityType(), item.getFileName(), item.getBytes(), profileId, Map.of());
+        ImportPreviewSummary preview = workflowFacade.preview(
+                item.getEntityType(),
+                item.getFileName(),
+                item.getBytes(),
+                profileId,
+                Map.of(),
+                new ImportPreviewOptions(null, draftInvoiceRefs));
         item.setPreviewSummary(preview);
         item.setStatusText(preview.runStatusSummary().name());
         item.setRowSummary(preview.totalRows() + " total / " + preview.readyRows() + " ready / " + preview.invalidRows() + " invalid");
@@ -282,6 +295,20 @@ public class BatchImportView extends VerticalLayout {
                     .findFirst()
                     .ifPresent(item::setSelectedProfile);
         }
+    }
+
+    private Map<String, QuickBooksInvoiceRef> draftInvoiceRefsForBatch(BatchDraftItem targetItem) {
+        Map<String, QuickBooksInvoiceRef> refs = new LinkedHashMap<>();
+        for (BatchDraftItem item : items) {
+            if (item == targetItem) {
+                continue;
+            }
+            if (item.getEntityType() != EntityType.INVOICE || item.getPreviewSummary() == null) {
+                continue;
+            }
+            refs.putAll(workflowFacade.draftInvoiceRefs(item.getEntityType(), item.getPreviewSummary().rawPreview()));
+        }
+        return refs;
     }
 
     private void refreshDetailPanel() {

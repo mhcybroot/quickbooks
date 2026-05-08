@@ -14,8 +14,10 @@ import com.example.quickbooksimporter.repository.ImportRunRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.ByteArrayInputStream;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Service;
@@ -44,8 +46,9 @@ public class BillPaymentImportService {
     public BillPaymentImportPreview preview(String fileName, byte[] bytes, Map<NormalizedBillPaymentField, String> mapping) {
         ParsedCsvDocument doc = parser.parse(new ByteArrayInputStream(bytes));
         Map<NormalizedBillPaymentField, String> finalMapping = new EnumMap<>(mapping);
+        Map<String, BigDecimal> allocatedByBill = new HashMap<>();
         List<BillPaymentRowValidationResult> validations = doc.rows().stream()
-                .map(r -> validateRow(r, finalMapping)).toList();
+                .map(r -> validateRow(r, finalMapping, allocatedByBill)).toList();
         List<BillPaymentImportPreviewRow> rows = validations.stream().map(v -> new BillPaymentImportPreviewRow(
                 v.rowNumber(),
                 v.payment() == null ? "" : v.payment().vendor(),
@@ -109,8 +112,19 @@ public class BillPaymentImportService {
         return new ImportExecutionResult(saved, failed == 0, failed == 0 ? "Imported " + imported + " bill payments." : "Imported " + imported + " bill payments, " + failed + " failed. Check Import History for row errors.");
     }
 
-    private BillPaymentRowValidationResult validateRow(com.example.quickbooksimporter.domain.ParsedCsvRow row, Map<NormalizedBillPaymentField, String> mapping) {
-        try { return validator.validate(row.rowNumber(), row.values(), rowMapper.map(row, mapping)); }
+    private BillPaymentRowValidationResult validateRow(com.example.quickbooksimporter.domain.ParsedCsvRow row,
+                                                       Map<NormalizedBillPaymentField, String> mapping,
+                                                       Map<String, BigDecimal> allocatedByBill) {
+        try {
+            NormalizedBillPayment payment = rowMapper.map(row, mapping);
+            String billNo = payment == null || payment.application() == null ? null : payment.application().billNo();
+            BigDecimal alreadyAllocated = billNo == null ? BigDecimal.ZERO : allocatedByBill.getOrDefault(billNo, BigDecimal.ZERO);
+            BillPaymentRowValidationResult result = validator.validate(row.rowNumber(), row.values(), payment, alreadyAllocated);
+            if (result.status() == ImportRowStatus.READY && billNo != null && payment.application().appliedAmount() != null) {
+                allocatedByBill.merge(billNo, payment.application().appliedAmount(), BigDecimal::add);
+            }
+            return result;
+        }
         catch (Exception ex) { return new BillPaymentRowValidationResult(row.rowNumber(), row, null, ImportRowStatus.INVALID, ex.getMessage(), row.values()); }
     }
 

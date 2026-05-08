@@ -9,5 +9,6 @@ public record ImportPreview(
         List<String> headers,
         List<ImportPreviewRow> rows,
         List<RowValidationResult> validations,
-        String exportCsv) {
+        String exportCsv,
+        boolean groupingEnabled) {
 }

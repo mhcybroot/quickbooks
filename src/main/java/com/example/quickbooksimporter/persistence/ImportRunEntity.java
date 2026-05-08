@@ -40,7 +40,7 @@ public class ImportRunEntity {
 
     private String mappingProfileName;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "batch_id")
     private ImportBatchEntity batch;
 

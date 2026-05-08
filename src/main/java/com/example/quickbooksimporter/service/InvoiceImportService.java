@@ -6,6 +6,7 @@ import com.example.quickbooksimporter.domain.ImportPreview;
 import com.example.quickbooksimporter.domain.ImportPreviewRow;
 import com.example.quickbooksimporter.domain.ImportRowStatus;
 import com.example.quickbooksimporter.domain.ImportRunStatus;
+import com.example.quickbooksimporter.domain.InvoiceLine;
 import com.example.quickbooksimporter.domain.NormalizedInvoice;
 import com.example.quickbooksimporter.domain.NormalizedInvoiceField;
 import com.example.quickbooksimporter.domain.RowValidationResult;
@@ -16,10 +17,14 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.ByteArrayInputStream;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -58,17 +63,24 @@ public class InvoiceImportService {
     }
 
     public ImportPreview preview(String fileName, byte[] bytes, Map<NormalizedInvoiceField, String> mapping) {
+        return preview(fileName, bytes, mapping, false);
+    }
+
+    public ImportPreview preview(String fileName,
+                                 byte[] bytes,
+                                 Map<NormalizedInvoiceField, String> mapping,
+                                 boolean groupingEnabled) {
         ParsedCsvDocument document = parser.parse(new ByteArrayInputStream(bytes));
         Map<NormalizedInvoiceField, String> finalMapping = new EnumMap<>(mapping);
-        List<RowValidationResult> validations = document.rows().stream()
-                .map(row -> validateRow(row, finalMapping))
-                .toList();
+        List<RowValidationResult> validations = groupingEnabled
+                ? validateGrouped(document, finalMapping)
+                : document.rows().stream().map(row -> validateRow(row, finalMapping)).toList();
         List<ImportPreviewRow> rows = validations.stream()
                 .map(result -> new ImportPreviewRow(
                         result.rowNumber(),
                         result.invoice() == null ? "" : result.invoice().invoiceNo(),
                         result.invoice() == null ? "" : result.invoice().customer(),
-                        result.invoice() == null || result.invoice().lines().isEmpty() ? "" : result.invoice().lines().getFirst().itemName(),
+                        previewItemLabel(result.invoice()),
                         result.status(),
                         result.message()))
                 .toList();
@@ -76,7 +88,7 @@ public class InvoiceImportService {
                 .filter(result -> result.invoice() != null)
                 .map(RowValidationResult::invoice)
                 .toList());
-        return new ImportPreview(fileName, finalMapping, document.headers(), rows, validations, exportCsv);
+        return new ImportPreview(fileName, finalMapping, document.headers(), rows, validations, exportCsv, groupingEnabled);
     }
 
     @Transactional
@@ -161,6 +173,62 @@ public class InvoiceImportService {
         }
     }
 
+    private List<RowValidationResult> validateGrouped(ParsedCsvDocument document,
+                                                      Map<NormalizedInvoiceField, String> mapping) {
+        Map<String, List<GroupedInvoiceSource>> groups = new HashMap<>();
+        List<RowValidationResult> validations = new ArrayList<>();
+        for (var row : document.rows()) {
+            try {
+                NormalizedInvoice invoice = rowMapper.map(row, mapping);
+                String key = invoice.invoiceNo() == null ? "ROW-" + row.rowNumber() : invoice.invoiceNo();
+                groups.computeIfAbsent(key, ignored -> new ArrayList<>())
+                        .add(new GroupedInvoiceSource(row.rowNumber(), row.values(), invoice));
+            } catch (Exception exception) {
+                validations.add(new RowValidationResult(row.rowNumber(), row, null, ImportRowStatus.INVALID, exception.getMessage(), row.values()));
+            }
+        }
+
+        for (List<GroupedInvoiceSource> group : groups.values()) {
+            GroupedInvoiceSource first = group.getFirst();
+            List<String> groupErrors = new ArrayList<>();
+            List<InvoiceLine> lines = new ArrayList<>();
+            for (GroupedInvoiceSource current : group) {
+                if (!Objects.equals(first.invoice().customer(), current.invoice().customer())
+                        || !Objects.equals(first.invoice().invoiceDate(), current.invoice().invoiceDate())
+                        || !Objects.equals(first.invoice().dueDate(), current.invoice().dueDate())
+                        || !Objects.equals(first.invoice().terms(), current.invoice().terms())
+                        || !Objects.equals(first.invoice().location(), current.invoice().location())
+                        || !Objects.equals(first.invoice().memo(), current.invoice().memo())) {
+                    groupErrors.add("Grouped rows for the same invoice must share customer, invoice date, due date, terms, location, and memo");
+                    break;
+                }
+                lines.addAll(current.invoice().lines());
+            }
+            NormalizedInvoice groupedInvoice = new NormalizedInvoice(
+                    first.invoice().invoiceNo(),
+                    first.invoice().customer(),
+                    first.invoice().invoiceDate(),
+                    first.invoice().dueDate(),
+                    first.invoice().terms(),
+                    first.invoice().location(),
+                    first.invoice().memo(),
+                    lines);
+            RowValidationResult validation = validator.validate(first.rowNumber(), first.rawData(), groupedInvoice);
+            if (!groupErrors.isEmpty()) {
+                validation = new RowValidationResult(
+                        validation.rowNumber(),
+                        validation.parsedRow(),
+                        validation.invoice(),
+                        ImportRowStatus.INVALID,
+                        joinMessages(validation.message(), String.join("; ", groupErrors)),
+                        validation.rawData());
+            }
+            validations.add(validation);
+        }
+        validations.sort(Comparator.comparingInt(RowValidationResult::rowNumber));
+        return validations;
+    }
+
     private ImportRunEntity persistRun(String fileName,
                                        String mappingProfileName,
                                        ImportPreview preview,
@@ -237,5 +305,29 @@ public class InvoiceImportService {
         }
         return "Import blocked: missing QB_SERVICE_ITEM_INCOME_ACCOUNT_ID and these service items do not exist in QuickBooks: "
                 + String.join(", ", missingItems);
+    }
+
+    private String previewItemLabel(NormalizedInvoice invoice) {
+        if (invoice == null || invoice.lines().isEmpty()) {
+            return "";
+        }
+        if (invoice.lines().size() == 1) {
+            return invoice.lines().getFirst().itemName();
+        }
+        String firstItem = invoice.lines().getFirst().itemName();
+        return firstItem + " +" + (invoice.lines().size() - 1) + " more";
+    }
+
+    private String joinMessages(String primary, String secondary) {
+        if (primary == null || primary.isBlank()) {
+            return secondary;
+        }
+        if (secondary == null || secondary.isBlank()) {
+            return primary;
+        }
+        return primary + "; " + secondary;
+    }
+
+    private record GroupedInvoiceSource(int rowNumber, Map<String, String> rawData, NormalizedInvoice invoice) {
     }
 }

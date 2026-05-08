@@ -164,11 +164,10 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
 
     @Override
     public QuickBooksInvoiceCreateResult createInvoice(String realmId, NormalizedInvoice invoice) {
-        InvoiceLine line = invoice.lines().getFirst();
         Map<String, Object> payload = payloadFactory.build(
                 invoice,
                 findCustomerRef(realmId, invoice.customer()),
-                findItemRef(realmId, line.itemName()));
+                line -> findItemRef(realmId, line.itemName()));
         InvoiceResponse response = post(realmId, "/v3/company/" + realmId + "/invoice", payload, InvoiceResponse.class);
         return new QuickBooksInvoiceCreateResult(response.invoice().id(), response.invoice().docNumber());
     }
