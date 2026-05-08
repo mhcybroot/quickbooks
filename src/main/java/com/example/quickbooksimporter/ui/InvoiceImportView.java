@@ -6,6 +6,8 @@ import com.example.quickbooksimporter.domain.ImportRowStatus;
 import com.example.quickbooksimporter.domain.NormalizedInvoiceField;
 import com.example.quickbooksimporter.service.CsvMappingProfileService;
 import com.example.quickbooksimporter.service.ImportExecutionResult;
+import com.example.quickbooksimporter.service.ImportExecutionMode;
+import com.example.quickbooksimporter.service.ImportExecutionOptions;
 import com.example.quickbooksimporter.service.ImportWorkflowFacade;
 import com.example.quickbooksimporter.service.InvoiceGroupingPreferenceService;
 import com.example.quickbooksimporter.service.InvoiceCsvParser;
@@ -187,14 +189,16 @@ public class InvoiceImportView extends VerticalLayout {
     private void configureActions() {
         Button previewButton = new Button("Preview & Validate", event -> previewImport());
         Button saveProfileButton = new Button("Save Mapping Profile", event -> saveProfile());
-        Button importButton = new Button("Import to QuickBooks", event -> importPreview());
+        Button importButton = new Button("Import to QuickBooks", event -> importPreview(ImportExecutionMode.STRICT_ALL_ROWS));
+        Button importReadyOnlyButton = new Button("Import Ready Rows Only", event -> importPreview(ImportExecutionMode.IMPORT_READY_ONLY));
         Button openHistoryButton = new Button("Open History", event -> UI.getCurrent().navigate("history"));
         previewButton.addThemeName("primary");
         importButton.addThemeName("primary");
+        importReadyOnlyButton.addThemeName("contrast");
         downloadAnchor.setText("Download normalized CSV");
         downloadAnchor.setVisible(false);
 
-        HorizontalLayout actions = new HorizontalLayout(previewButton, saveProfileButton, importButton, downloadAnchor, openHistoryButton);
+        HorizontalLayout actions = new HorizontalLayout(previewButton, saveProfileButton, importButton, importReadyOnlyButton, downloadAnchor, openHistoryButton);
         actions.addClassName("corp-action-bar");
         add(UiComponents.card(UiComponents.sectionTitle("Stage 5: Execute"), actions));
     }
@@ -217,7 +221,7 @@ public class InvoiceImportView extends VerticalLayout {
         applyPreviewFilter();
         long readyCount = currentPreview.rows().stream().filter(row -> row.status() == ImportRowStatus.READY).count();
         long invalidCount = currentPreview.rows().stream().filter(row -> row.status() == ImportRowStatus.INVALID).count();
-        summary.setText("Preview complete: " + readyCount + " ready, " + invalidCount + " invalid. Grouping is " + (invoiceGroupingEnabled ? "enabled" : "disabled") + ".");
+        summary.setText("Preview complete: " + readyCount + " ready, " + invalidCount + " invalid. Use 'Import Ready Rows Only' to skip invalid rows. Grouping is " + (invoiceGroupingEnabled ? "enabled" : "disabled") + ".");
         refreshKpis(currentPreview.rows().size(), (int) readyCount, (int) invalidCount);
         downloadAnchor.setHref(new StreamResource("normalized-" + uploadedFileName,
                 () -> new java.io.ByteArrayInputStream(currentPreview.exportCsv().getBytes(StandardCharsets.UTF_8))));
@@ -234,7 +238,7 @@ public class InvoiceImportView extends VerticalLayout {
         notifySuccess("Mapping profile saved.");
     }
 
-    private void importPreview() {
+    private void importPreview(ImportExecutionMode mode) {
         if (currentPreview == null) {
             notifyWarning("Run preview first.");
             return;
@@ -242,7 +246,8 @@ public class InvoiceImportView extends VerticalLayout {
         ImportExecutionResult result = invoiceImportService.execute(
                 uploadedFileName,
                 savedProfiles.getOptionalValue().map(MappingProfileSummary::name).orElse(profileName.getValue()),
-                currentPreview);
+                currentPreview,
+                new ImportExecutionOptions(null, null, null, mode));
         if (result.success()) {
             notifySuccess(result.message());
         } else {

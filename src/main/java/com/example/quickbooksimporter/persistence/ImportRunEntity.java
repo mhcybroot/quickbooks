@@ -63,6 +63,12 @@ public class ImportRunEntity {
     @Column(nullable = false)
     private int importedRows;
 
+    @Column(nullable = false)
+    private int attemptedRows;
+
+    @Column(nullable = false)
+    private int skippedRows;
+
     @Column(columnDefinition = "text")
     private String exportCsv;
 
@@ -172,6 +178,22 @@ public class ImportRunEntity {
 
     public void setImportedRows(int importedRows) {
         this.importedRows = importedRows;
+    }
+
+    public int getAttemptedRows() {
+        return attemptedRows;
+    }
+
+    public void setAttemptedRows(int attemptedRows) {
+        this.attemptedRows = attemptedRows;
+    }
+
+    public int getSkippedRows() {
+        return skippedRows;
+    }
+
+    public void setSkippedRows(int skippedRows) {
+        this.skippedRows = skippedRows;
     }
 
     public String getExportCsv() {

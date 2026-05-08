@@ -5,6 +5,8 @@ import com.example.quickbooksimporter.domain.NormalizedPaymentField;
 import com.example.quickbooksimporter.domain.PaymentImportPreview;
 import com.example.quickbooksimporter.domain.PaymentImportPreviewRow;
 import com.example.quickbooksimporter.service.ImportExecutionResult;
+import com.example.quickbooksimporter.service.ImportExecutionMode;
+import com.example.quickbooksimporter.service.ImportExecutionOptions;
 import com.example.quickbooksimporter.service.InvoiceCsvParser;
 import com.example.quickbooksimporter.service.MappingProfileSummary;
 import com.example.quickbooksimporter.service.ParsedCsvDocument;
@@ -153,11 +155,12 @@ public class PaymentImportView extends VerticalLayout {
     private void configureActions() {
         Button previewButton = new Button("Preview & Validate", event -> previewImport());
         Button saveProfileButton = new Button("Save Mapping Profile", event -> saveProfile());
-        Button importButton = new Button("Import Payments", event -> importPreview());
+        Button importButton = new Button("Import Payments", event -> importPreview(ImportExecutionMode.STRICT_ALL_ROWS));
+        Button importReadyOnlyButton = new Button("Import Ready Rows Only", event -> importPreview(ImportExecutionMode.IMPORT_READY_ONLY));
         Button historyButton = new Button("Open History", event -> UI.getCurrent().navigate("history"));
         previewButton.addThemeName("primary");
         importButton.addThemeName("primary");
-        HorizontalLayout actions = new HorizontalLayout(previewButton, saveProfileButton, importButton, historyButton);
+        HorizontalLayout actions = new HorizontalLayout(previewButton, saveProfileButton, importButton, importReadyOnlyButton, historyButton);
         actions.addClassName("corp-action-bar");
         add(UiComponents.card(UiComponents.sectionTitle("Stage 5: Execute"), actions));
     }
@@ -176,7 +179,7 @@ public class PaymentImportView extends VerticalLayout {
         applyPreviewFilter();
         long readyCount = currentPreview.rows().stream().filter(row -> row.status() == ImportRowStatus.READY).count();
         long invalidCount = currentPreview.rows().stream().filter(row -> row.status() == ImportRowStatus.INVALID).count();
-        summary.setText("Preview complete: " + readyCount + " ready, " + invalidCount + " invalid.");
+        summary.setText("Preview complete: " + readyCount + " ready, " + invalidCount + " invalid. Use 'Import Ready Rows Only' to skip invalid rows.");
     }
 
     private void saveProfile() {
@@ -192,7 +195,7 @@ public class PaymentImportView extends VerticalLayout {
         notifySuccess("Payment mapping profile saved.");
     }
 
-    private void importPreview() {
+    private void importPreview(ImportExecutionMode mode) {
         if (currentPreview == null) {
             notifyWarning("Run preview first.");
             return;
@@ -200,7 +203,8 @@ public class PaymentImportView extends VerticalLayout {
         ImportExecutionResult result = paymentImportService.execute(
                 uploadedFileName,
                 savedProfiles.getOptionalValue().map(MappingProfileSummary::name).orElse(profileName.getValue()),
-                currentPreview);
+                currentPreview,
+                new ImportExecutionOptions(null, null, null, mode));
         if (result.success()) {
             notifySuccess(result.message());
         } else {

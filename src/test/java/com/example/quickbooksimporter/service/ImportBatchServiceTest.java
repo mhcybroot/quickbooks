@@ -55,7 +55,7 @@ class ImportBatchServiceTest {
         when(workflowFacade.requiredParentIdentifiers(EntityType.PAYMENT, preview)).thenReturn(Set.of("INV-100"));
 
         List<String> warnings = service.dependencyWarnings(List.of(
-                new ImportBatchService.BatchFileRequest(1, EntityType.PAYMENT, "payments.csv", null, summary)));
+                new ImportBatchService.BatchFileRequest(1, EntityType.PAYMENT, "payments.csv", null, summary, false)));
 
         assertEquals(1, warnings.size());
         assertTrue(warnings.getFirst().contains("INV-100"));
@@ -84,8 +84,8 @@ class ImportBatchServiceTest {
                 .thenReturn(new ImportExecutionResult(run("payment.csv", EntityType.PAYMENT), true, "ok"));
 
         service.executeBatch(7L, List.of(
-                new ImportBatchService.BatchFileRequest(1, EntityType.PAYMENT, "payment.csv", "pay-profile", paymentSummary),
-                new ImportBatchService.BatchFileRequest(2, EntityType.INVOICE, "invoice.csv", "inv-profile", invoiceSummary)));
+                new ImportBatchService.BatchFileRequest(1, EntityType.PAYMENT, "payment.csv", "pay-profile", paymentSummary, false),
+                new ImportBatchService.BatchFileRequest(2, EntityType.INVOICE, "invoice.csv", "inv-profile", invoiceSummary, false)));
 
         InOrder inOrder = inOrder(workflowFacade);
         inOrder.verify(workflowFacade).execute(eq(EntityType.INVOICE), eq("invoice.csv"), eq("inv-profile"), eq(invoicePreview), any());

@@ -23,6 +23,7 @@ import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.component.checkbox.Checkbox;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.component.upload.Upload;
 import com.vaadin.flow.component.upload.receivers.MultiFileMemoryBuffer;
@@ -63,6 +64,7 @@ public class BatchImportView extends VerticalLayout {
     private final ComboBox<EntityType> entityType = new ComboBox<>("Detected Entity Type");
     private final ComboBox<MappingProfileSummary> profile = new ComboBox<>("Mapping Profile");
     private final Paragraph detailSummary = new Paragraph("Select a file to review and validate it.");
+    private final Checkbox skipInvalidRows = new Checkbox("Skip invalid rows per file");
     private final Anchor downloadAnchor = new Anchor();
 
     private BatchDraftItem selectedItem;
@@ -204,7 +206,9 @@ public class BatchImportView extends VerticalLayout {
         validateAll.addThemeName("primary");
         runAll.addThemeName("primary");
 
+        skipInvalidRows.setValue(false);
         HorizontalLayout actions = new HorizontalLayout(batchName, validateAll, runAll, openHistory, clear);
+        actions.add(skipInvalidRows);
         actions.setWidthFull();
         add(UiComponents.card(new H3("Batch Actions"), new Paragraph("Validate the queue first, then run valid files in system-managed order."), actions));
     }
@@ -231,7 +235,10 @@ public class BatchImportView extends VerticalLayout {
                 .forEach(item -> validateItem(item, draftInvoiceRefsForBatch(item)));
         batchService.updateValidationSnapshot(activeBatchId, items.size(),
                 (int) items.stream().filter(item -> item.getPreviewSummary() != null).count(),
-                (int) items.stream().filter(item -> item.getPreviewSummary() != null && !item.getPreviewSummary().hasBlockingIssues()).count());
+                (int) items.stream().filter(item -> item.getPreviewSummary() != null
+                        && !item.getPreviewSummary().hasBlockingIssues(
+                        skipInvalidRows.getValue() ? com.example.quickbooksimporter.service.ImportExecutionMode.IMPORT_READY_ONLY
+                                : com.example.quickbooksimporter.service.ImportExecutionMode.STRICT_ALL_ROWS)).count());
         List<String> warnings = batchService.dependencyWarnings(items.stream()
                 .map(this::toBatchRequest)
                 .toList());
@@ -286,7 +293,9 @@ public class BatchImportView extends VerticalLayout {
                 Map.of(),
                 new ImportPreviewOptions(null, draftInvoiceRefs));
         item.setPreviewSummary(preview);
-        item.setStatusText(preview.runStatusSummary().name());
+        item.setStatusText(preview.runStatusSummary(
+                skipInvalidRows.getValue() ? com.example.quickbooksimporter.service.ImportExecutionMode.IMPORT_READY_ONLY
+                        : com.example.quickbooksimporter.service.ImportExecutionMode.STRICT_ALL_ROWS).name());
         item.setRowSummary(preview.totalRows() + " total / " + preview.readyRows() + " ready / " + preview.invalidRows() + " invalid");
         item.setWarningText(preview.warnings().isEmpty() ? "Validated." : String.join(" | ", preview.warnings()));
         if (item.getSelectedProfile() == null && preview.suggestedProfileName() != null) {
@@ -404,7 +413,8 @@ public class BatchImportView extends VerticalLayout {
                 item.getEntityType(),
                 item.getFileName(),
                 item.getSelectedProfile() == null ? null : item.getSelectedProfile().name(),
-                item.getPreviewSummary());
+                item.getPreviewSummary(),
+                skipInvalidRows.getValue());
     }
 
     private void notifySuccess(String message) {

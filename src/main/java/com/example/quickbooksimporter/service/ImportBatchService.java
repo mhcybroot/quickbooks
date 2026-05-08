@@ -115,7 +115,9 @@ public class ImportBatchService {
         int runnableFiles = 0;
 
         for (BatchFileRequest file : ordered) {
-            if (file.previewSummary() == null || file.previewSummary().hasBlockingIssues()) {
+            if (file.previewSummary() == null || file.previewSummary().hasBlockingIssues(file.skipInvalidRows()
+                    ? ImportExecutionMode.IMPORT_READY_ONLY
+                    : ImportExecutionMode.STRICT_ALL_ROWS)) {
                 continue;
             }
             runnableFiles++;
@@ -124,7 +126,11 @@ public class ImportBatchService {
                     file.fileName(),
                     file.mappingProfileName(),
                     file.previewSummary().rawPreview(),
-                    new ImportExecutionOptions(batch, file.position(), dependencyGroup(file.entityType())));
+                    new ImportExecutionOptions(
+                            batch,
+                            file.position(),
+                            dependencyGroup(file.entityType()),
+                            file.skipInvalidRows() ? ImportExecutionMode.IMPORT_READY_ONLY : ImportExecutionMode.STRICT_ALL_ROWS));
             results.add(result);
             completedFiles++;
         }
@@ -168,7 +174,8 @@ public class ImportBatchService {
             EntityType entityType,
             String fileName,
             String mappingProfileName,
-            ImportPreviewSummary previewSummary) {
+            ImportPreviewSummary previewSummary,
+            boolean skipInvalidRows) {
     }
 
     public record BatchExecutionReport(

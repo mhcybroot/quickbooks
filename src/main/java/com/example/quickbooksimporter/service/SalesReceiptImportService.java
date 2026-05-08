@@ -79,12 +79,22 @@ public class SalesReceiptImportService {
                                          String mappingProfileName,
                                          SalesReceiptImportPreview preview,
                                          ImportExecutionOptions options) {
-        if (preview.validations().stream().anyMatch(result -> result.status() != ImportRowStatus.READY)) {
+        ImportExecutionMode mode = executionMode(options);
+        long readyRows = preview.validations().stream().filter(result -> result.status() == ImportRowStatus.READY).count();
+        if (mode == ImportExecutionMode.STRICT_ALL_ROWS
+                && preview.validations().stream().anyMatch(result -> result.status() != ImportRowStatus.READY)) {
             ImportRunEntity failedRun = persistRun(fileName, mappingProfileName, preview, ImportRunStatus.VALIDATION_FAILED, 0);
             return new ImportExecutionResult(failedRun, false, "Import blocked because one or more rows are invalid.");
         }
+        if (mode == ImportExecutionMode.IMPORT_READY_ONLY && readyRows == 0) {
+            ImportRunEntity failedRun = persistRun(fileName, mappingProfileName, preview, ImportRunStatus.VALIDATION_FAILED, 0);
+            return new ImportExecutionResult(failedRun, false, "Import blocked because there are no ready rows to import.");
+        }
         String realmId = connectionService.getActiveConnection().getRealmId();
         int imported = 0;
+        int attempted = 0;
+        int skipped = 0;
+        int failed = 0;
         ImportRunEntity run = new ImportRunEntity();
         run.setEntityType(EntityType.SALES_RECEIPT);
         run.setStatus(ImportRunStatus.RUNNING);
@@ -96,7 +106,15 @@ public class SalesReceiptImportService {
 
         for (SalesReceiptRowValidationResult validation : preview.validations()) {
             ImportRowResultEntity rowEntity = buildRow(run, validation);
+            if (mode == ImportExecutionMode.IMPORT_READY_ONLY && validation.status() != ImportRowStatus.READY) {
+                rowEntity.setStatus(ImportRowStatus.SKIPPED);
+                rowEntity.setMessage("Skipped because row is not READY.");
+                run.getRowResults().add(rowEntity);
+                skipped++;
+                continue;
+            }
             try {
+                attempted++;
                 NormalizedSalesReceipt receipt = validation.salesReceipt();
                 if (!StringUtils.isBlank(receipt.paymentMethod())) {
                     quickBooksGateway.ensurePaymentMethod(realmId, receipt.paymentMethod());
@@ -110,22 +128,24 @@ public class SalesReceiptImportService {
             } catch (Exception exception) {
                 rowEntity.setStatus(ImportRowStatus.FAILED);
                 rowEntity.setMessage(exception.getMessage());
+                failed++;
             }
             run.getRowResults().add(rowEntity);
         }
         run.setTotalRows(preview.rows().size());
-        run.setValidRows(preview.rows().size());
-        run.setInvalidRows(0);
-        run.setDuplicateRows(0);
+        run.setValidRows((int) readyRows);
+        run.setInvalidRows((int) preview.validations().stream().filter(result -> result.status() == ImportRowStatus.INVALID).count());
+        run.setDuplicateRows((int) preview.validations().stream().filter(result -> result.status() == ImportRowStatus.DUPLICATE).count());
+        run.setAttemptedRows(attempted);
+        run.setSkippedRows(skipped);
         run.setImportedRows(imported);
-        run.setStatus(imported == preview.rows().size() ? ImportRunStatus.IMPORTED : ImportRunStatus.PARTIAL_FAILURE);
+        run.setStatus(failed == 0 && skipped == 0 ? ImportRunStatus.IMPORTED : ImportRunStatus.PARTIAL_FAILURE);
         run.setCompletedAt(Instant.now());
         ImportRunEntity saved = importRunRepository.save(run);
-        int failed = preview.rows().size() - imported;
-        String message = failed == 0
+        String message = failed == 0 && skipped == 0
                 ? "Imported " + imported + " sales receipts."
-                : "Imported " + imported + " sales receipts, " + failed + " failed. Check Import History for row errors.";
-        return new ImportExecutionResult(saved, imported == preview.rows().size(), message);
+                : "Imported " + imported + " ready sales receipts; skipped " + skipped + " rows; " + failed + " failed during import. Check Import History for details.";
+        return new ImportExecutionResult(saved, failed == 0, message);
     }
 
     private List<SalesReceiptRowValidationResult> validateGrouped(ParsedCsvDocument document,
@@ -202,6 +222,8 @@ public class SalesReceiptImportService {
         run.setInvalidRows((int) preview.validations().stream().filter(result -> result.status() == ImportRowStatus.INVALID).count());
         run.setDuplicateRows((int) preview.validations().stream().filter(result -> result.message().contains("already exists")).count());
         run.setImportedRows(importedRows);
+        run.setAttemptedRows(0);
+        run.setSkippedRows(0);
         run.setExportCsv(null);
         run.setCreatedAt(Instant.now());
         run.setCompletedAt(Instant.now());
@@ -236,5 +258,12 @@ public class SalesReceiptImportService {
         run.setBatch(options.batch());
         run.setBatchOrder(options.batchOrder());
         run.setDependencyGroup(options.dependencyGroup());
+    }
+
+    private ImportExecutionMode executionMode(ImportExecutionOptions options) {
+        if (options == null || options.executionMode() == null) {
+            return ImportExecutionMode.STRICT_ALL_ROWS;
+        }
+        return options.executionMode();
     }
 }

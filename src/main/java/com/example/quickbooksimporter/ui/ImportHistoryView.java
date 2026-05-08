@@ -105,6 +105,8 @@ public class ImportHistoryView extends VerticalLayout {
         runGrid.addColumn(ImportRunEntity::getDependencyGroup).setHeader("Dependency").setAutoWidth(true).setFlexGrow(0);
         runGrid.addColumn(ImportRunEntity::getStatus).setHeader("Status").setAutoWidth(true).setFlexGrow(0);
         runGrid.addColumn(ImportRunEntity::getTotalRows).setHeader("Rows").setAutoWidth(true).setFlexGrow(0);
+        runGrid.addColumn(ImportRunEntity::getAttemptedRows).setHeader("Attempted").setAutoWidth(true).setFlexGrow(0);
+        runGrid.addColumn(ImportRunEntity::getSkippedRows).setHeader("Skipped").setAutoWidth(true).setFlexGrow(0);
         runGrid.addColumn(ImportRunEntity::getImportedRows).setHeader("Imported").setAutoWidth(true).setFlexGrow(0);
         runGrid.addColumn(ImportRunEntity::getCreatedAt).setHeader("Created").setAutoWidth(true).setFlexGrow(1);
         runGrid.setWidthFull();

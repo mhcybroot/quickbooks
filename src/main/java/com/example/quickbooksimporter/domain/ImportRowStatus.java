@@ -5,6 +5,7 @@ public enum ImportRowStatus {
     INVALID,
     READY,
     DUPLICATE,
+    SKIPPED,
     IMPORTED,
     FAILED
 }

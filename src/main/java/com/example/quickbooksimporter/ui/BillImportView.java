@@ -7,6 +7,8 @@ import com.example.quickbooksimporter.domain.NormalizedBillField;
 import com.example.quickbooksimporter.service.BillImportService;
 import com.example.quickbooksimporter.service.BillMappingProfileService;
 import com.example.quickbooksimporter.service.ImportExecutionResult;
+import com.example.quickbooksimporter.service.ImportExecutionMode;
+import com.example.quickbooksimporter.service.ImportExecutionOptions;
 import com.example.quickbooksimporter.service.InvoiceCsvParser;
 import com.example.quickbooksimporter.service.MappingProfileSummary;
 import com.example.quickbooksimporter.service.ParsedCsvDocument;
@@ -115,10 +117,11 @@ public class BillImportView extends VerticalLayout {
     private void configureActions() {
         Button preview = new Button("Preview & Validate", e -> previewImport());
         Button save = new Button("Save Mapping Profile", e -> saveProfile());
-        Button run = new Button("Import Bills", e -> importPreview());
+        Button run = new Button("Import Bills", e -> importPreview(ImportExecutionMode.STRICT_ALL_ROWS));
+        Button runReadyOnly = new Button("Import Ready Rows Only", e -> importPreview(ImportExecutionMode.IMPORT_READY_ONLY));
         Button historyButton = new Button("Open History", e -> UI.getCurrent().navigate("history"));
         preview.addThemeName("primary"); run.addThemeName("primary");
-        HorizontalLayout actions = new HorizontalLayout(preview, save, run, historyButton); actions.addClassName("corp-action-bar");
+        HorizontalLayout actions = new HorizontalLayout(preview, save, run, runReadyOnly, historyButton); actions.addClassName("corp-action-bar");
         add(UiComponents.card(UiComponents.sectionTitle("Stage 5: Execute"), actions));
     }
     private void previewImport() {
@@ -127,7 +130,7 @@ public class BillImportView extends VerticalLayout {
         applyPreviewFilter();
         long ready = currentPreview.rows().stream().filter(r -> r.status() == ImportRowStatus.READY).count();
         long invalid = currentPreview.rows().stream().filter(r -> r.status() == ImportRowStatus.INVALID).count();
-        summary.setText("Preview complete: " + ready + " ready, " + invalid + " invalid.");
+        summary.setText("Preview complete: " + ready + " ready, " + invalid + " invalid. Use 'Import Ready Rows Only' to skip invalid rows.");
     }
     private void saveProfile() {
         if (profileName.isEmpty()) { notifyWarning("Enter a profile name first."); return; }
@@ -135,11 +138,12 @@ public class BillImportView extends VerticalLayout {
         savedProfiles.setItems(mappingProfileService.listProfiles());
         notifySuccess("Bill mapping profile saved.");
     }
-    private void importPreview() {
+    private void importPreview(ImportExecutionMode mode) {
         if (currentPreview == null) { notifyWarning("Run preview first."); return; }
         ImportExecutionResult result = importService.execute(uploadedFileName,
                 savedProfiles.getOptionalValue().map(MappingProfileSummary::name).orElse(profileName.getValue()),
-                currentPreview);
+                currentPreview,
+                new ImportExecutionOptions(null, null, null, mode));
         if (result.success()) notifySuccess(result.message()); else notifyWarning(result.message());
         summary.setText(result.message());
     }

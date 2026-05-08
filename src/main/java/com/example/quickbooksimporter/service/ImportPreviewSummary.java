@@ -18,11 +18,22 @@ public record ImportPreviewSummary(
         Object rawPreview) {
 
     public boolean hasBlockingIssues() {
+        return hasBlockingIssues(ImportExecutionMode.STRICT_ALL_ROWS);
+    }
+
+    public boolean hasBlockingIssues(ImportExecutionMode mode) {
+        if (mode == ImportExecutionMode.IMPORT_READY_ONLY) {
+            return readyRows <= 0;
+        }
         return invalidRows > 0;
     }
 
     public ImportRunStatusSummary runStatusSummary() {
-        if (invalidRows > 0) {
+        return runStatusSummary(ImportExecutionMode.STRICT_ALL_ROWS);
+    }
+
+    public ImportRunStatusSummary runStatusSummary(ImportExecutionMode mode) {
+        if (hasBlockingIssues(mode)) {
             return ImportRunStatusSummary.BLOCKED;
         }
         return readyRows > 0 ? ImportRunStatusSummary.READY : ImportRunStatusSummary.EMPTY;
