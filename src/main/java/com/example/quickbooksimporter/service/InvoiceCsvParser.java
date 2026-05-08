@@ -13,6 +13,7 @@ import java.util.Map;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
+import org.apache.commons.csv.DuplicateHeaderMode;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -22,16 +23,18 @@ public class InvoiceCsvParser {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
              CSVParser parser = CSVFormat.DEFAULT.builder()
                      .setHeader()
+                     .setAllowMissingColumnNames(true)
+                     .setDuplicateHeaderMode(DuplicateHeaderMode.ALLOW_ALL)
                      .setSkipHeaderRecord(true)
                      .setIgnoreSurroundingSpaces(true)
                      .build()
                      .parse(reader)) {
-            List<String> headers = parser.getHeaderNames();
+            List<String> headers = normalizeHeaders(parser.getHeaderNames());
             List<ParsedCsvRow> rows = new ArrayList<>();
             for (CSVRecord record : parser) {
                 Map<String, String> values = new LinkedHashMap<>();
-                for (String header : headers) {
-                    values.put(header, record.get(header));
+                for (int index = 0; index < headers.size(); index++) {
+                    values.put(headers.get(index), index < record.size() ? record.get(index) : "");
                 }
                 rows.add(new ParsedCsvRow((int) record.getRecordNumber() + 1, values));
             }
@@ -39,5 +42,18 @@ public class InvoiceCsvParser {
         } catch (IOException exception) {
             throw new IllegalArgumentException("Unable to parse CSV", exception);
         }
+    }
+
+    private List<String> normalizeHeaders(List<String> rawHeaders) {
+        List<String> normalized = new ArrayList<>(rawHeaders.size());
+        Map<String, Integer> seen = new LinkedHashMap<>();
+        for (int index = 0; index < rawHeaders.size(); index++) {
+            String raw = rawHeaders.get(index);
+            String base = (raw == null || raw.isBlank()) ? "_unnamed_column" : raw.trim();
+            int count = seen.getOrDefault(base, 0);
+            seen.put(base, count + 1);
+            normalized.add(count == 0 ? base : base + "_" + (count + 1));
+        }
+        return normalized;
     }
 }
