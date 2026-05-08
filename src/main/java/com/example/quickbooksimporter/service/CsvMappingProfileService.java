@@ -8,6 +8,7 @@ import java.time.Instant;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,7 +49,13 @@ public class CsvMappingProfileService {
         CsvMappingProfileEntity entity = new CsvMappingProfileEntity();
         entity.setName(name);
         entity.setEntityType(EntityType.INVOICE);
-        entity.setMappings(new EnumMap<>(mappings));
+        Map<NormalizedInvoiceField, String> cleaned = new EnumMap<>(NormalizedInvoiceField.class);
+        mappings.forEach((field, header) -> {
+            if (StringUtils.isNotBlank(header)) {
+                cleaned.put(field, header);
+            }
+        });
+        entity.setMappings(cleaned);
         Instant now = Instant.now();
         entity.setCreatedAt(now);
         entity.setUpdatedAt(now);

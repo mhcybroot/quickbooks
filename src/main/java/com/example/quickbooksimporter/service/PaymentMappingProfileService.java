@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -68,6 +69,7 @@ public class PaymentMappingProfileService {
         PaymentMappingProfileEntity entity = new PaymentMappingProfileEntity();
         entity.setName(name);
         Map<String, String> entries = mappings.entrySet().stream()
+                .filter(entry -> StringUtils.isNotBlank(entry.getValue()))
                 .collect(java.util.stream.Collectors.toMap(entry -> entry.getKey().name(), Map.Entry::getValue));
         entries.put(DATE_FORMAT_PAYMENT_DATE_KEY, (paymentDateFormat == null ? DateFormatOption.AUTO : paymentDateFormat).name());
         entity.setMappings(entries);

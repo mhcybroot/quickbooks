@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,7 +44,9 @@ public class BillPaymentMappingProfileService {
     public BillPaymentMappingProfileEntity saveProfile(String name, Map<NormalizedBillPaymentField, String> mappings) {
         BillPaymentMappingProfileEntity entity = new BillPaymentMappingProfileEntity();
         entity.setName(name);
-        entity.setMappings(mappings.entrySet().stream().collect(java.util.stream.Collectors.toMap(e -> e.getKey().name(), Map.Entry::getValue)));
+        entity.setMappings(mappings.entrySet().stream()
+                .filter(entry -> StringUtils.isNotBlank(entry.getValue()))
+                .collect(java.util.stream.Collectors.toMap(entry -> entry.getKey().name(), Map.Entry::getValue)));
         Instant now = Instant.now();
         entity.setCreatedAt(now);
         entity.setUpdatedAt(now);
