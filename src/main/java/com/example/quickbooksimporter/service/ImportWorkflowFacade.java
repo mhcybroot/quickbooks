@@ -170,7 +170,8 @@ public class ImportWorkflowFacade {
                             fileName,
                             bytes,
                             toPaymentMapping(mapping),
-                            options.draftInvoiceRefs() == null ? Map.of() : options.draftInvoiceRefs()),
+                            options.draftInvoiceRefs() == null ? Map.of() : options.draftInvoiceRefs(),
+                            DateFormatOption.AUTO),
                     suggestedProfile);
             case EXPENSE -> summarizeExpensePreview(
                     expenseImportService.preview(fileName, bytes, toExpenseMapping(mapping)),

@@ -6,8 +6,6 @@ import com.example.quickbooksimporter.domain.ParsedCsvRow;
 import com.example.quickbooksimporter.domain.PaymentApplication;
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
 import java.util.Map;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
@@ -15,15 +13,16 @@ import org.springframework.stereotype.Service;
 @Service
 public class PaymentRowMapper {
 
-    private static final DateTimeFormatter[] DATE_FORMATS = new DateTimeFormatter[]{
-            DateTimeFormatter.ofPattern("MM/dd/yy"),
-            DateTimeFormatter.ofPattern("MM/dd/yyyy"),
-            DateTimeFormatter.ISO_LOCAL_DATE
-    };
-
     public NormalizedPayment map(ParsedCsvRow row, Map<NormalizedPaymentField, String> mapping) {
+        return map(row, mapping, DateFormatOption.AUTO);
+    }
+
+    public NormalizedPayment map(ParsedCsvRow row,
+                                 Map<NormalizedPaymentField, String> mapping,
+                                 DateFormatOption paymentDateFormat) {
         String customer = value(row.values(), mapping.get(NormalizedPaymentField.CUSTOMER));
-        LocalDate paymentDate = parseDate(value(row.values(), mapping.get(NormalizedPaymentField.PAYMENT_DATE)));
+        LocalDate paymentDate = parseDate(value(row.values(), mapping.get(NormalizedPaymentField.PAYMENT_DATE)),
+                paymentDateFormat == null ? DateFormatOption.AUTO : paymentDateFormat);
         String referenceNo = value(row.values(), mapping.get(NormalizedPaymentField.REFERENCE_NO));
         String paymentMethod = value(row.values(), mapping.get(NormalizedPaymentField.PAYMENT_METHOD));
         String depositAccount = value(row.values(), mapping.get(NormalizedPaymentField.DEPOSIT_ACCOUNT));
@@ -48,17 +47,11 @@ public class PaymentRowMapper {
         return StringUtils.isBlank(value) ? null : value.trim();
     }
 
-    private LocalDate parseDate(String value) {
+    private LocalDate parseDate(String value, DateFormatOption formatOption) {
         if (StringUtils.isBlank(value)) {
             return null;
         }
-        for (DateTimeFormatter formatter : DATE_FORMATS) {
-            try {
-                return LocalDate.parse(value.trim(), formatter);
-            } catch (DateTimeParseException ignored) {
-            }
-        }
-        throw new IllegalArgumentException("Invalid payment date: " + value);
+        return formatOption.parse(value.trim());
     }
 
     private BigDecimal parseDecimal(String value) {

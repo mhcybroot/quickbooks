@@ -51,18 +51,26 @@ public class PaymentImportService {
     }
 
     public PaymentImportPreview preview(String fileName, byte[] bytes, Map<NormalizedPaymentField, String> mapping) {
-        return preview(fileName, bytes, mapping, Map.of());
+        return preview(fileName, bytes, mapping, Map.of(), DateFormatOption.AUTO);
     }
 
     public PaymentImportPreview preview(String fileName,
                                         byte[] bytes,
                                         Map<NormalizedPaymentField, String> mapping,
                                         Map<String, QuickBooksInvoiceRef> draftInvoiceRefs) {
+        return preview(fileName, bytes, mapping, draftInvoiceRefs, DateFormatOption.AUTO);
+    }
+
+    public PaymentImportPreview preview(String fileName,
+                                        byte[] bytes,
+                                        Map<NormalizedPaymentField, String> mapping,
+                                        Map<String, QuickBooksInvoiceRef> draftInvoiceRefs,
+                                        DateFormatOption paymentDateFormat) {
         ParsedCsvDocument document = parser.parse(new ByteArrayInputStream(bytes));
         Map<NormalizedPaymentField, String> finalMapping = new EnumMap<>(mapping);
         Map<String, BigDecimal> allocatedByInvoice = new HashMap<>();
         List<PaymentRowValidationResult> validations = document.rows().stream()
-                .map(row -> validateRow(row, finalMapping, allocatedByInvoice, draftInvoiceRefs))
+                .map(row -> validateRow(row, finalMapping, allocatedByInvoice, draftInvoiceRefs, paymentDateFormat))
                 .toList();
         List<PaymentImportPreviewRow> rows = validations.stream()
                 .map(result -> new PaymentImportPreviewRow(
@@ -136,9 +144,10 @@ public class PaymentImportService {
     private PaymentRowValidationResult validateRow(com.example.quickbooksimporter.domain.ParsedCsvRow row,
                                                    Map<NormalizedPaymentField, String> mapping,
                                                    Map<String, BigDecimal> allocatedByInvoice,
-                                                   Map<String, QuickBooksInvoiceRef> draftInvoiceRefs) {
+                                                   Map<String, QuickBooksInvoiceRef> draftInvoiceRefs,
+                                                   DateFormatOption paymentDateFormat) {
         try {
-            NormalizedPayment payment = rowMapper.map(row, mapping);
+            NormalizedPayment payment = rowMapper.map(row, mapping, paymentDateFormat);
             String invoiceNo = payment == null || payment.application() == null ? null : payment.application().invoiceNo();
             BigDecimal alreadyAllocated = invoiceNo == null ? BigDecimal.ZERO : allocatedByInvoice.getOrDefault(invoiceNo, BigDecimal.ZERO);
             PaymentRowValidationResult result = validator.validate(

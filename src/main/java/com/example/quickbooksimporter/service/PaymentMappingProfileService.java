@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class PaymentMappingProfileService {
+    public static final String DATE_FORMAT_PAYMENT_DATE_KEY = "__DATE_FORMAT_PAYMENT_DATE";
 
     private final PaymentMappingProfileRepository repository;
 
@@ -40,16 +41,36 @@ public class PaymentMappingProfileService {
         PaymentMappingProfileEntity entity = repository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Payment mapping profile not found"));
         Map<NormalizedPaymentField, String> result = new EnumMap<>(NormalizedPaymentField.class);
-        entity.getMappings().forEach((key, value) -> result.put(NormalizedPaymentField.valueOf(key), value));
+        entity.getMappings().forEach((key, value) -> {
+            try {
+                result.put(NormalizedPaymentField.valueOf(key), value);
+            } catch (IllegalArgumentException ignored) {
+            }
+        });
         return result;
+    }
+
+    public DateFormatOption loadPaymentDateFormat(Long id) {
+        PaymentMappingProfileEntity entity = repository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Payment mapping profile not found"));
+        return DateFormatOption.fromStored(entity.getMappings().get(DATE_FORMAT_PAYMENT_DATE_KEY));
     }
 
     @Transactional
     public PaymentMappingProfileEntity saveProfile(String name, Map<NormalizedPaymentField, String> mappings) {
+        return saveProfile(name, mappings, DateFormatOption.AUTO);
+    }
+
+    @Transactional
+    public PaymentMappingProfileEntity saveProfile(String name,
+                                                   Map<NormalizedPaymentField, String> mappings,
+                                                   DateFormatOption paymentDateFormat) {
         PaymentMappingProfileEntity entity = new PaymentMappingProfileEntity();
         entity.setName(name);
-        entity.setMappings(mappings.entrySet().stream()
-                .collect(java.util.stream.Collectors.toMap(entry -> entry.getKey().name(), Map.Entry::getValue)));
+        Map<String, String> entries = mappings.entrySet().stream()
+                .collect(java.util.stream.Collectors.toMap(entry -> entry.getKey().name(), Map.Entry::getValue));
+        entries.put(DATE_FORMAT_PAYMENT_DATE_KEY, (paymentDateFormat == null ? DateFormatOption.AUTO : paymentDateFormat).name());
+        entity.setMappings(entries);
         Instant now = Instant.now();
         entity.setCreatedAt(now);
         entity.setUpdatedAt(now);

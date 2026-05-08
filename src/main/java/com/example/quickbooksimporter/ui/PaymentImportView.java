@@ -8,6 +8,7 @@ import com.example.quickbooksimporter.service.ImportExecutionResult;
 import com.example.quickbooksimporter.service.InvoiceCsvParser;
 import com.example.quickbooksimporter.service.MappingProfileSummary;
 import com.example.quickbooksimporter.service.ParsedCsvDocument;
+import com.example.quickbooksimporter.service.DateFormatOption;
 import com.example.quickbooksimporter.service.PaymentImportService;
 import com.example.quickbooksimporter.service.PaymentMappingProfileService;
 import com.example.quickbooksimporter.ui.components.UiComponents;
@@ -47,6 +48,7 @@ public class PaymentImportView extends VerticalLayout {
     private final MemoryBuffer uploadBuffer = new MemoryBuffer();
     private final Upload upload = new Upload(uploadBuffer);
     private final ComboBox<MappingProfileSummary> savedProfiles = new ComboBox<>("Saved Payment Mapping Profiles");
+    private final ComboBox<DateFormatOption> paymentDateFormat = new ComboBox<>("Payment Date Format");
     private final ComboBox<ImportRowStatus> previewFilter = new ComboBox<>("Preview Filter");
     private final TextField profileName = new TextField("New Profile Name");
     private final FormLayout mappingForm = new FormLayout();
@@ -102,17 +104,21 @@ public class PaymentImportView extends VerticalLayout {
     private void configureProfiles() {
         savedProfiles.setItems(mappingProfileService.listProfiles());
         savedProfiles.setItemLabelGenerator(MappingProfileSummary::name);
+        paymentDateFormat.setItems(DateFormatOption.values());
+        paymentDateFormat.setItemLabelGenerator(DateFormatOption::label);
+        paymentDateFormat.setValue(DateFormatOption.AUTO);
         savedProfiles.addValueChangeListener(event -> {
             if (event.getValue() == null || currentHeaders.isEmpty()) {
                 return;
             }
             Map<NormalizedPaymentField, String> mapping = mappingProfileService.loadProfile(event.getValue().id());
+            paymentDateFormat.setValue(mappingProfileService.loadPaymentDateFormat(event.getValue().id()));
             fieldSelectors.forEach((field, selector) -> {
                 selector.setItems(currentHeaders);
                 selector.setValue(mapping.get(field));
             });
         });
-        HorizontalLayout profileRow = new HorizontalLayout(savedProfiles, profileName);
+        HorizontalLayout profileRow = new HorizontalLayout(savedProfiles, profileName, paymentDateFormat);
         profileRow.setWidthFull();
         profileRow.expand(savedProfiles, profileName);
         add(UiComponents.card(UiComponents.sectionTitle("Stage 2: Mapping Profile"), profileRow));
@@ -161,7 +167,12 @@ public class PaymentImportView extends VerticalLayout {
             notifyWarning("Upload a CSV file first.");
             return;
         }
-        currentPreview = paymentImportService.preview(uploadedFileName, uploadedBytes, currentMapping());
+        currentPreview = paymentImportService.preview(
+                uploadedFileName,
+                uploadedBytes,
+                currentMapping(),
+                java.util.Map.of(),
+                paymentDateFormat.getValue() == null ? DateFormatOption.AUTO : paymentDateFormat.getValue());
         applyPreviewFilter();
         long readyCount = currentPreview.rows().stream().filter(row -> row.status() == ImportRowStatus.READY).count();
         long invalidCount = currentPreview.rows().stream().filter(row -> row.status() == ImportRowStatus.INVALID).count();
@@ -173,7 +184,10 @@ public class PaymentImportView extends VerticalLayout {
             notifyWarning("Enter a profile name first.");
             return;
         }
-        mappingProfileService.saveProfile(profileName.getValue(), currentMapping());
+        mappingProfileService.saveProfile(
+                profileName.getValue(),
+                currentMapping(),
+                paymentDateFormat.getValue() == null ? DateFormatOption.AUTO : paymentDateFormat.getValue());
         savedProfiles.setItems(mappingProfileService.listProfiles());
         notifySuccess("Payment mapping profile saved.");
     }
