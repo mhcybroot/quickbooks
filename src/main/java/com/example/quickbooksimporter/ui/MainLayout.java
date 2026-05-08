@@ -41,6 +41,8 @@ public class MainLayout extends AppLayout {
         addToNavbar(header);
 
         SideNav nav = new SideNav();
+        nav.addItem(new SideNavItem("Import Workspace", ImportWorkspaceView.class, VaadinIcon.DASHBOARD.create()));
+        nav.addItem(new SideNavItem("Batch Import", BatchImportView.class, VaadinIcon.FOLDER_OPEN.create()));
         nav.addItem(new SideNavItem("Invoice Import", InvoiceImportView.class, VaadinIcon.UPLOAD.create()));
         nav.addItem(new SideNavItem("Sales Receipt Import", SalesReceiptImportView.class, VaadinIcon.CART.create()));
         nav.addItem(new SideNavItem("Bill Import", BillImportView.class, VaadinIcon.FILE_TEXT.create()));

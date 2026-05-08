@@ -68,6 +68,14 @@ public class PaymentImportService {
 
     @Transactional
     public ImportExecutionResult execute(String fileName, String mappingProfileName, PaymentImportPreview preview) {
+        return execute(fileName, mappingProfileName, preview, ImportExecutionOptions.standalone());
+    }
+
+    @Transactional
+    public ImportExecutionResult execute(String fileName,
+                                         String mappingProfileName,
+                                         PaymentImportPreview preview,
+                                         ImportExecutionOptions options) {
         if (preview.validations().stream().anyMatch(result -> result.status() != ImportRowStatus.READY)) {
             ImportRunEntity failedRun = persistRun(fileName, mappingProfileName, preview, ImportRunStatus.VALIDATION_FAILED, 0);
             return new ImportExecutionResult(failedRun, false, "Import blocked because one or more rows are invalid.");
@@ -76,11 +84,12 @@ public class PaymentImportService {
         int imported = 0;
         ImportRunEntity run = new ImportRunEntity();
         run.setEntityType(EntityType.PAYMENT);
-        run.setStatus(ImportRunStatus.PREVIEW_READY);
+        run.setStatus(ImportRunStatus.RUNNING);
         run.setSourceFileName(fileName);
         run.setMappingProfileName(mappingProfileName);
         run.setCreatedAt(Instant.now());
         run.setExportCsv(null);
+        applyExecutionOptions(run, options);
 
         for (PaymentRowValidationResult validation : preview.validations()) {
             ImportRowResultEntity rowEntity = buildRow(run, validation);
@@ -104,7 +113,7 @@ public class PaymentImportService {
         run.setInvalidRows(0);
         run.setDuplicateRows(0);
         run.setImportedRows(imported);
-        run.setStatus(imported == preview.rows().size() ? ImportRunStatus.IMPORTED : ImportRunStatus.VALIDATION_FAILED);
+        run.setStatus(imported == preview.rows().size() ? ImportRunStatus.IMPORTED : ImportRunStatus.PARTIAL_FAILURE);
         run.setCompletedAt(Instant.now());
         ImportRunEntity saved = importRunRepository.save(run);
         int failed = preview.rows().size() - imported;
@@ -163,5 +172,14 @@ public class PaymentImportService {
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Unable to serialize import data", exception);
         }
+    }
+
+    private void applyExecutionOptions(ImportRunEntity run, ImportExecutionOptions options) {
+        if (options == null) {
+            return;
+        }
+        run.setBatch(options.batch());
+        run.setBatchOrder(options.batchOrder());
+        run.setDependencyGroup(options.dependencyGroup());
     }
 }

@@ -4,8 +4,10 @@ import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.html.H4;
 import com.vaadin.flow.component.html.Paragraph;
 import com.vaadin.flow.component.html.Span;
+import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.theme.lumo.LumoUtility;
+import java.util.Arrays;
 
 public final class UiComponents {
 
@@ -48,5 +50,17 @@ public final class UiComponents {
         Span badge = new Span(text);
         badge.addClassNames("corp-badge", variantClass);
         return badge;
+    }
+
+    public static HorizontalLayout importStepper(String activeStep) {
+        HorizontalLayout layout = new HorizontalLayout();
+        layout.addClassName("corp-stepper");
+        layout.setWidthFull();
+        Arrays.asList("Upload", "Map", "Validate", "Review", "Run").forEach(step -> {
+            Span badge = new Span(step);
+            badge.addClassNames("corp-step", step.equals(activeStep) ? "corp-step-active" : "corp-step-idle");
+            layout.add(badge);
+        });
+        return layout;
     }
 }

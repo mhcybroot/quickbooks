@@ -11,6 +11,7 @@ import com.example.quickbooksimporter.service.InvoiceCsvParser;
 import com.example.quickbooksimporter.service.MappingProfileSummary;
 import com.example.quickbooksimporter.service.ParsedCsvDocument;
 import com.example.quickbooksimporter.ui.components.UiComponents;
+import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.formlayout.FormLayout;
@@ -44,6 +45,7 @@ public class BillImportView extends VerticalLayout {
     private final MemoryBuffer uploadBuffer = new MemoryBuffer();
     private final Upload upload = new Upload(uploadBuffer);
     private final ComboBox<MappingProfileSummary> savedProfiles = new ComboBox<>("Saved Bill Mapping Profiles");
+    private final ComboBox<ImportRowStatus> previewFilter = new ComboBox<>("Preview Filter");
     private final TextField profileName = new TextField("New Profile Name");
     private final FormLayout mappingForm = new FormLayout();
     private final Grid<BillImportPreviewRow> previewGrid = new Grid<>(BillImportPreviewRow.class, false);
@@ -60,7 +62,8 @@ public class BillImportView extends VerticalLayout {
         this.importService = importService;
         addClassName("corp-page");
         setSizeFull();
-        add(new H2("Bill Import"), new Paragraph("Upload, map, validate, and import AP bills into QuickBooks."));
+        add(new H2("Bill Import"), new Paragraph("Upload, map, validate, review, and import AP bills into QuickBooks."),
+                UiComponents.importStepper("Upload"));
         configureUpload(); configureProfiles(); configureMappingForm(); configurePreviewGrid(); configureActions();
     }
 
@@ -105,20 +108,23 @@ public class BillImportView extends VerticalLayout {
         previewGrid.addColumn(BillImportPreviewRow::status).setHeader("Status");
         previewGrid.addColumn(BillImportPreviewRow::message).setHeader("Message").setAutoWidth(true).setFlexGrow(1);
         previewGrid.setHeight("360px"); previewGrid.addClassName("corp-grid");
-        add(UiComponents.card(new H3("Stage 4: Validation Preview"), summary, previewGrid));
+        previewFilter.setItems(ImportRowStatus.values());
+        previewFilter.addValueChangeListener(event -> applyPreviewFilter());
+        add(UiComponents.card(new H3("Stage 4: Validation Preview"), summary, previewFilter, previewGrid));
     }
     private void configureActions() {
         Button preview = new Button("Preview & Validate", e -> previewImport());
         Button save = new Button("Save Mapping Profile", e -> saveProfile());
         Button run = new Button("Import Bills", e -> importPreview());
+        Button historyButton = new Button("Open History", e -> UI.getCurrent().navigate("history"));
         preview.addThemeName("primary"); run.addThemeName("primary");
-        HorizontalLayout actions = new HorizontalLayout(preview, save, run); actions.addClassName("corp-action-bar");
+        HorizontalLayout actions = new HorizontalLayout(preview, save, run, historyButton); actions.addClassName("corp-action-bar");
         add(UiComponents.card(UiComponents.sectionTitle("Stage 5: Execute"), actions));
     }
     private void previewImport() {
         if (uploadedBytes == null) { notifyWarning("Upload a CSV file first."); return; }
         currentPreview = importService.preview(uploadedFileName, uploadedBytes, currentMapping());
-        previewGrid.setItems(currentPreview.rows());
+        applyPreviewFilter();
         long ready = currentPreview.rows().stream().filter(r -> r.status() == ImportRowStatus.READY).count();
         long invalid = currentPreview.rows().stream().filter(r -> r.status() == ImportRowStatus.INVALID).count();
         summary.setText("Preview complete: " + ready + " ready, " + invalid + " invalid.");
@@ -144,4 +150,9 @@ public class BillImportView extends VerticalLayout {
     }
     private void notifySuccess(String msg){ Notification n=Notification.show(Objects.requireNonNull(msg)); n.addThemeVariants(NotificationVariant.LUMO_SUCCESS); }
     private void notifyWarning(String msg){ Notification n=Notification.show(Objects.requireNonNull(msg)); n.addThemeVariants(NotificationVariant.LUMO_WARNING); }
+    private void applyPreviewFilter() {
+        if (currentPreview == null) { previewGrid.setItems(List.of()); return; }
+        ImportRowStatus filter = previewFilter.getValue();
+        previewGrid.setItems(currentPreview.rows().stream().filter(r -> filter == null || r.status() == filter).toList());
+    }
 }

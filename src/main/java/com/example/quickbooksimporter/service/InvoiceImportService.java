@@ -83,6 +83,14 @@ public class InvoiceImportService {
     public ImportExecutionResult execute(String fileName,
                                          String mappingProfileName,
                                          ImportPreview preview) {
+        return execute(fileName, mappingProfileName, preview, ImportExecutionOptions.standalone());
+    }
+
+    @Transactional
+    public ImportExecutionResult execute(String fileName,
+                                         String mappingProfileName,
+                                         ImportPreview preview,
+                                         ImportExecutionOptions options) {
         if (preview.validations().stream().anyMatch(result -> result.status() != ImportRowStatus.READY)) {
             ImportRunEntity failedRun = persistRun(fileName, mappingProfileName, preview, ImportRunStatus.VALIDATION_FAILED, 0);
             return new ImportExecutionResult(failedRun, false, "Import blocked because one or more rows are invalid.");
@@ -96,11 +104,12 @@ public class InvoiceImportService {
         int imported = 0;
         ImportRunEntity run = new ImportRunEntity();
         run.setEntityType(EntityType.INVOICE);
-        run.setStatus(ImportRunStatus.PREVIEW_READY);
+        run.setStatus(ImportRunStatus.RUNNING);
         run.setSourceFileName(fileName);
         run.setMappingProfileName(mappingProfileName);
         run.setCreatedAt(Instant.now());
         run.setExportCsv(preview.exportCsv());
+        applyExecutionOptions(run, options);
 
         for (RowValidationResult validation : preview.validations()) {
             ImportRowResultEntity rowEntity = buildRow(run, validation);
@@ -124,7 +133,7 @@ public class InvoiceImportService {
         run.setInvalidRows(0);
         run.setDuplicateRows(0);
         run.setImportedRows(imported);
-        run.setStatus(imported == preview.rows().size() ? ImportRunStatus.IMPORTED : ImportRunStatus.VALIDATION_FAILED);
+        run.setStatus(imported == preview.rows().size() ? ImportRunStatus.IMPORTED : ImportRunStatus.PARTIAL_FAILURE);
         run.setCompletedAt(Instant.now());
         ImportRunEntity saved = importRunRepository.save(run);
         int failed = preview.rows().size() - imported;
@@ -172,6 +181,15 @@ public class InvoiceImportService {
         run.setCompletedAt(Instant.now());
         preview.validations().forEach(validation -> run.getRowResults().add(buildRow(run, validation)));
         return importRunRepository.save(run);
+    }
+
+    private void applyExecutionOptions(ImportRunEntity run, ImportExecutionOptions options) {
+        if (options == null) {
+            return;
+        }
+        run.setBatch(options.batch());
+        run.setBatchOrder(options.batchOrder());
+        run.setDependencyGroup(options.dependencyGroup());
     }
 
     private ImportRowResultEntity buildRow(ImportRunEntity run, RowValidationResult validation) {

@@ -11,6 +11,8 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import java.time.Instant;
@@ -37,6 +39,14 @@ public class ImportRunEntity {
     private String sourceFileName;
 
     private String mappingProfileName;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "batch_id")
+    private ImportBatchEntity batch;
+
+    private Integer batchOrder;
+
+    private String dependencyGroup;
 
     @Column(nullable = false)
     private int totalRows;
@@ -98,6 +108,30 @@ public class ImportRunEntity {
 
     public void setMappingProfileName(String mappingProfileName) {
         this.mappingProfileName = mappingProfileName;
+    }
+
+    public ImportBatchEntity getBatch() {
+        return batch;
+    }
+
+    public void setBatch(ImportBatchEntity batch) {
+        this.batch = batch;
+    }
+
+    public Integer getBatchOrder() {
+        return batchOrder;
+    }
+
+    public void setBatchOrder(Integer batchOrder) {
+        this.batchOrder = batchOrder;
+    }
+
+    public String getDependencyGroup() {
+        return dependencyGroup;
+    }
+
+    public void setDependencyGroup(String dependencyGroup) {
+        this.dependencyGroup = dependencyGroup;
     }
 
     public int getTotalRows() {

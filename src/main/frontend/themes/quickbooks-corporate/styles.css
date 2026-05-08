@@ -99,6 +99,58 @@ body {
   gap: var(--lumo-space-s);
 }
 
+.corp-stepper {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.corp-step {
+  border-radius: 999px;
+  padding: 0.35rem 0.8rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: 1px solid rgba(17, 24, 39, 0.1);
+}
+
+.corp-step-active {
+  background: rgba(184, 134, 47, 0.15);
+  color: #8a6525;
+  border-color: rgba(184, 134, 47, 0.35);
+}
+
+.corp-step-idle {
+  background: #ffffff;
+  color: #526174;
+}
+
+.corp-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--lumo-space-m);
+}
+
+.corp-inline-note {
+  font-size: 0.86rem;
+  color: var(--corp-text-muted);
+}
+
+.corp-workspace-grid {
+  width: 100%;
+  align-items: stretch;
+}
+
+.corp-workspace-card {
+  min-width: 0;
+  flex: 1 1 0;
+}
+
+@media (max-width: 980px) {
+  .corp-workspace-grid {
+    flex-direction: column;
+  }
+}
+
 .corp-grid vaadin-grid-cell-content {
   font-size: 0.92rem;
 }
