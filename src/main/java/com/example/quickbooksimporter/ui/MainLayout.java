@@ -52,6 +52,7 @@ public class MainLayout extends AppLayout {
         nav.addItem(new SideNavItem("Bill Payments", BillPaymentImportView.class, VaadinIcon.WALLET.create()));
         nav.addItem(new SideNavItem("Receive Payments", PaymentImportView.class, VaadinIcon.MONEY_DEPOSIT.create()));
         nav.addItem(new SideNavItem("Expense Import", ExpenseImportView.class, VaadinIcon.CREDIT_CARD.create()));
+        nav.addItem(new SideNavItem("CSV Compare", CsvCompareView.class, VaadinIcon.TABLE.create()));
         nav.addItem(new SideNavItem("Cleanup Hub", QboCleanupHubView.class, VaadinIcon.TRASH.create()));
         nav.addItem(new SideNavItem("Cleanup Invoices", InvoiceCleanupView.class, VaadinIcon.ARCHIVE.create()));
         nav.addItem(new SideNavItem("Cleanup Sales Receipts", SalesReceiptCleanupView.class, VaadinIcon.CART_O.create()));
