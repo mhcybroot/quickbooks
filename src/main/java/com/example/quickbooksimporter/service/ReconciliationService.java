@@ -34,6 +34,8 @@ public class ReconciliationService {
     private static final DateTimeFormatter[] DATE_FORMATS = new DateTimeFormatter[] {
             DateTimeFormatter.ofPattern("M/d/yyyy"),
             DateTimeFormatter.ofPattern("MM/dd/yyyy"),
+            DateTimeFormatter.ofPattern("d-M-yyyy"),
+            DateTimeFormatter.ofPattern("dd-MM-yyyy"),
             DateTimeFormatter.ofPattern("yyyy-MM-dd")
     };
 
