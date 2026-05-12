@@ -489,14 +489,19 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
                                                     Integer startPosition) {
         int page = filter == null || filter.pageSize() <= 0 ? 200 : filter.pageSize();
         int offset = startPosition == null || startPosition < 1 ? 1 : startPosition;
-        String query = "select " + cleanupSelectFields(type)
-                + " from " + type.qboEntityName()
-                + buildWhereClause(type, filter)
-                + " startposition " + offset
-                + " maxresults " + page;
+        String query = buildCleanupListQuery(type, filter, offset, page);
         QueryResponse response = query(realmId, query);
         List<Map<String, Object>> rows = castList(response.queryResponse(), type.qboEntityName());
         return rows.stream().map(row -> toCleanupRow(type, row)).toList();
+    }
+
+    String buildCleanupListQuery(QboCleanupEntityType type, QboCleanupFilter filter, int startPosition, int maxResults) {
+        return "select " + cleanupSelectFields(type)
+                + " from " + type.qboEntityName()
+                + buildWhereClause(type, filter)
+                + " order by TxnDate desc, Id desc"
+                + " startposition " + startPosition
+                + " maxresults " + maxResults;
     }
 
     @Override

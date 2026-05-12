@@ -118,15 +118,17 @@ public abstract class QboCleanupPageBase extends VerticalLayout {
     }
 
     private void search(boolean includeAll) {
+        boolean effectiveIncludeAll = includeAll || entityType == QboCleanupEntityType.INVOICE;
         QboCleanupFilter filter = new QboCleanupFilter(
                 fromDate.getValue(),
                 toDate.getValue(),
                 docRef.getValue(),
                 party.getValue(),
                 pageSize.getValue() == null ? 200 : pageSize.getValue());
-        currentRows = cleanupService.list(entityType, filter, includeAll);
+        currentRows = cleanupService.list(entityType, filter, effectiveIncludeAll);
         grid.setItems(currentRows);
-        summary.setText("Loaded " + currentRows.size() + " records.");
+        summary.setText("Loaded " + currentRows.size() + " records"
+                + (effectiveIncludeAll ? " (all pages)." : "."));
     }
 
     private void runDeleteSelected() {

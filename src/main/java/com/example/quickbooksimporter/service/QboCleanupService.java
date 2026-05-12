@@ -28,9 +28,10 @@ public class QboCleanupService {
     public List<QboTransactionRow> list(QboCleanupEntityType type, QboCleanupFilter filter, boolean includeAllCompanyData) {
         String realmId = connectionService.getActiveConnection().getRealmId();
         QboCleanupFilter effective = filter == null ? QboCleanupFilter.defaults() : filter;
+        boolean fetchAllPages = includeAllCompanyData || type == QboCleanupEntityType.INVOICE;
         log.debug("Cleanup list request: realmId={}, type={}, includeAll={}, filter={}",
                 realmId, type, includeAllCompanyData, effective);
-        if (!includeAllCompanyData) {
+        if (!fetchAllPages) {
             List<QboTransactionRow> rows = applyLocalFilters(quickBooksGateway.listTransactions(realmId, type, effective, 1), effective);
             log.debug("Cleanup list result: realmId={}, type={}, count={}", realmId, type, rows.size());
             return rows;
@@ -39,6 +40,7 @@ public class QboCleanupService {
         int start = 1;
         while (true) {
             List<QboTransactionRow> page = quickBooksGateway.listTransactions(realmId, type, effective, start);
+            log.debug("Cleanup list page: realmId={}, type={}, start={}, fetched={}", realmId, type, start, page.size());
             if (page.isEmpty()) {
                 break;
             }
