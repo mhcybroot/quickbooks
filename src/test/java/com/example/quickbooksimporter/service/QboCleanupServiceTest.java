@@ -10,6 +10,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -153,6 +154,53 @@ class QboCleanupServiceTest {
 
         assertEquals(List.of("BILL-1", "BILL-3", "BILL-2"),
                 result.stream().map(QboTransactionRow::externalNumber).toList());
+    }
+
+    @Test
+    void receivePaymentDocFilterFallsBackLocallyWhenGatewayReturnsBroadSet() {
+        QboCleanupFilter filter = new QboCleanupFilter(
+                null, null, "CHK-22", null, null,
+                null, null, null, null, null,
+                QboCleanupSortField.TXN_DATE, QboSortDirection.DESC, 50);
+        when(gateway.listTransactions("realm-1", QboCleanupEntityType.RECEIVE_PAYMENT, filter, 1))
+                .thenReturn(List.of(
+                        row(QboCleanupEntityType.RECEIVE_PAYMENT, "1", "CHK-221"),
+                        row(QboCleanupEntityType.RECEIVE_PAYMENT, "2", "PAY-100"),
+                        row(QboCleanupEntityType.RECEIVE_PAYMENT, "3", "CHK-220")));
+
+        List<QboTransactionRow> result = service.list(QboCleanupEntityType.RECEIVE_PAYMENT, filter, false);
+
+        assertEquals(List.of("CHK-220", "CHK-221"),
+                result.stream().map(QboTransactionRow::externalNumber).toList());
+    }
+
+    @Test
+    void docReferenceFilterFallsBackLocallyForAllCleanupTypes() {
+        for (QboCleanupEntityType type : Stream.of(
+                QboCleanupEntityType.INVOICE,
+                QboCleanupEntityType.SALES_RECEIPT,
+                QboCleanupEntityType.BILL,
+                QboCleanupEntityType.BILL_PAYMENT,
+                QboCleanupEntityType.RECEIVE_PAYMENT,
+                QboCleanupEntityType.EXPENSE).toList()) {
+            QboCleanupFilter filter = new QboCleanupFilter(
+                    null, null, "MATCH-", null, null,
+                    null, null, null, null, null,
+                    QboCleanupSortField.TXN_DATE, QboSortDirection.DESC, 50);
+            when(gateway.listTransactions("realm-1", type, filter, 1))
+                    .thenReturn(List.of(
+                            row(type, "1", "MATCH-001"),
+                            row(type, "2", "NOPE-001"),
+                            row(type, "3", "MATCH-002")));
+
+            List<QboTransactionRow> result = service.list(type, filter, false);
+            List<String> externalNumbers = result.stream().map(QboTransactionRow::externalNumber).toList();
+            assertEquals(2, externalNumbers.size(), "docReference local fallback size should apply for " + type.name());
+            org.junit.jupiter.api.Assertions.assertTrue(externalNumbers.contains("MATCH-001"),
+                    "docReference local fallback should include MATCH-001 for " + type.name());
+            org.junit.jupiter.api.Assertions.assertTrue(externalNumbers.contains("MATCH-002"),
+                    "docReference local fallback should include MATCH-002 for " + type.name());
+        }
     }
 
     private QboTransactionRow row(QboCleanupEntityType type, String id, String externalNumber) {

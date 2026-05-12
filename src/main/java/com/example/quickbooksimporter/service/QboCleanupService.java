@@ -221,8 +221,16 @@ public class QboCleanupService {
             return rows;
         }
         return rows.stream()
+                .filter(row -> containsIgnoreCase(row.externalNumber(), filter.docNumberContains()))
                 .filter(row -> containsIgnoreCase(row.partyName(), filter.partyContains()))
                 .filter(row -> containsIgnoreCase(row.status(), filter.statusContains()))
+                .filter(row -> containsIgnoreCase(row.id(), filter.idContains()))
+                .filter(row -> gteDate(row.txnDate(), filter.fromDate()))
+                .filter(row -> lteDate(row.txnDate(), filter.toDate()))
+                .filter(row -> gteAmount(row.totalAmount(), filter.amountMin()))
+                .filter(row -> lteAmount(row.totalAmount(), filter.amountMax()))
+                .filter(row -> gteAmount(row.balance(), filter.balanceMin()))
+                .filter(row -> lteAmount(row.balance(), filter.balanceMax()))
                 .toList();
     }
 
@@ -250,5 +258,33 @@ public class QboCleanupService {
             return true;
         }
         return source != null && source.toLowerCase().contains(needle.trim().toLowerCase());
+    }
+
+    private boolean gteAmount(java.math.BigDecimal value, java.math.BigDecimal min) {
+        if (min == null) {
+            return true;
+        }
+        return value != null && value.compareTo(min) >= 0;
+    }
+
+    private boolean lteAmount(java.math.BigDecimal value, java.math.BigDecimal max) {
+        if (max == null) {
+            return true;
+        }
+        return value != null && value.compareTo(max) <= 0;
+    }
+
+    private boolean gteDate(java.time.LocalDate value, java.time.LocalDate min) {
+        if (min == null) {
+            return true;
+        }
+        return value != null && !value.isBefore(min);
+    }
+
+    private boolean lteDate(java.time.LocalDate value, java.time.LocalDate max) {
+        if (max == null) {
+            return true;
+        }
+        return value != null && !value.isAfter(max);
     }
 }
