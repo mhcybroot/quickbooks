@@ -118,7 +118,7 @@ public abstract class QboCleanupPageBase extends VerticalLayout {
     }
 
     private void search(boolean includeAll) {
-        boolean effectiveIncludeAll = includeAll || entityType == QboCleanupEntityType.INVOICE;
+        boolean effectiveIncludeAll = true;
         QboCleanupFilter filter = new QboCleanupFilter(
                 fromDate.getValue(),
                 toDate.getValue(),

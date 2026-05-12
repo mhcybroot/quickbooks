@@ -27,4 +27,25 @@ class QuickBooksApiGatewayCleanupQueryTest {
         assertTrue(query.contains("startposition 201"));
         assertTrue(query.contains("maxresults 200"));
     }
+
+    @Test
+    void cleanupListQueryForNonInvoiceEntityIncludesPagingFilteringAndOrdering() {
+        QuickBooksApiGateway gateway = new QuickBooksApiGateway(null, null, null, null);
+        QboCleanupFilter filter = new QboCleanupFilter(
+                LocalDate.of(2026, 2, 1),
+                LocalDate.of(2026, 2, 28),
+                "BP-",
+                "Ignored local party filter",
+                100);
+
+        String query = gateway.buildCleanupListQuery(QboCleanupEntityType.BILL_PAYMENT, filter, 101, 100);
+
+        assertTrue(query.contains("from BillPayment"));
+        assertTrue(query.contains("TxnDate >= '2026-02-01'"));
+        assertTrue(query.contains("TxnDate <= '2026-02-28'"));
+        assertTrue(query.contains("DocNumber LIKE '%BP-%'"));
+        assertTrue(query.contains("order by TxnDate desc, Id desc"));
+        assertTrue(query.contains("startposition 101"));
+        assertTrue(query.contains("maxresults 100"));
+    }
 }
