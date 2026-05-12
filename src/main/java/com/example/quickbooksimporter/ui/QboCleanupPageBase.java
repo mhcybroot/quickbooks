@@ -3,11 +3,14 @@ package com.example.quickbooksimporter.ui;
 import com.example.quickbooksimporter.service.QboCleanupEntityType;
 import com.example.quickbooksimporter.service.QboCleanupDryRunPlan;
 import com.example.quickbooksimporter.service.QboCleanupFilter;
+import com.example.quickbooksimporter.service.QboCleanupSortField;
 import com.example.quickbooksimporter.service.QboCleanupRecoveryResult;
 import com.example.quickbooksimporter.service.QboCleanupResult;
 import com.example.quickbooksimporter.service.QboCleanupService;
+import com.example.quickbooksimporter.service.QboSortDirection;
 import com.example.quickbooksimporter.service.QboTransactionRow;
 import com.example.quickbooksimporter.ui.components.UiComponents;
+import com.vaadin.flow.component.textfield.BigDecimalField;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.datepicker.DatePicker;
@@ -36,11 +39,20 @@ public abstract class QboCleanupPageBase extends VerticalLayout {
     private final DatePicker toDate = new DatePicker("To Date");
     private final TextField docRef = new TextField("Doc/Reference Contains");
     private final TextField party = new TextField("Customer/Vendor Contains");
+    private final TextField statusContains = new TextField("Status/Private Note Contains");
+    private final TextField qboIdContains = new TextField("QBO ID Contains");
+    private final BigDecimalField amountMin = new BigDecimalField("Amount Min");
+    private final BigDecimalField amountMax = new BigDecimalField("Amount Max");
+    private final BigDecimalField balanceMin = new BigDecimalField("Balance Min");
+    private final BigDecimalField balanceMax = new BigDecimalField("Balance Max");
+    private final ComboBox<QboCleanupSortField> sortBy = new ComboBox<>("Sort By");
+    private final ComboBox<QboSortDirection> sortDirection = new ComboBox<>("Direction");
     private final Grid<QboTransactionRow> grid = new Grid<>(QboTransactionRow.class, false);
     private final Grid<QboCleanupResult> resultGrid = new Grid<>(QboCleanupResult.class, false);
     private final Paragraph summary = new Paragraph("Select filters then click Search.");
     private final ComboBox<Integer> pageSize = new ComboBox<>("Page Size");
     private final Button searchButton = new Button("Search");
+    private final Button resetButton = new Button("Reset Filters");
 
     private List<QboTransactionRow> currentRows = List.of();
 
@@ -59,11 +71,19 @@ public abstract class QboCleanupPageBase extends VerticalLayout {
     private void configureFilters() {
         pageSize.setItems(50, 100, 200, 500);
         pageSize.setValue(200);
+        sortBy.setItems(QboCleanupSortField.values());
+        sortBy.setValue(QboCleanupSortField.TXN_DATE);
+        sortDirection.setItems(QboSortDirection.values());
+        sortDirection.setValue(QboSortDirection.DESC);
         searchButton.addThemeName("primary");
         searchButton.addClickListener(event -> search(false));
-        HorizontalLayout row = new HorizontalLayout(fromDate, toDate, docRef, party, pageSize, searchButton);
+        resetButton.addClickListener(event -> resetFilters());
+        HorizontalLayout row = new HorizontalLayout(
+                fromDate, toDate, docRef, party, statusContains, qboIdContains,
+                amountMin, amountMax, balanceMin, balanceMax,
+                sortBy, sortDirection, pageSize, searchButton, resetButton);
         row.setWidthFull();
-        row.expand(docRef, party);
+        row.expand(docRef, party, statusContains, qboIdContains);
         row.setAlignItems(Alignment.END);
         add(UiComponents.card(UiComponents.sectionTitle("Filters"), row, summary));
     }
@@ -77,6 +97,7 @@ public abstract class QboCleanupPageBase extends VerticalLayout {
         grid.addColumn(QboTransactionRow::totalAmount).setHeader("Total").setAutoWidth(true);
         grid.addColumn(QboTransactionRow::balance).setHeader("Balance").setAutoWidth(true);
         grid.addColumn(QboTransactionRow::id).setHeader("QBO ID").setAutoWidth(true);
+        grid.addColumn(QboTransactionRow::status).setHeader("Status/Private Note").setAutoWidth(true).setFlexGrow(1);
         grid.setHeight("360px");
         add(UiComponents.card(UiComponents.sectionTitle("QuickBooks Records"), grid));
     }
@@ -124,11 +145,37 @@ public abstract class QboCleanupPageBase extends VerticalLayout {
                 toDate.getValue(),
                 docRef.getValue(),
                 party.getValue(),
+                statusContains.getValue(),
+                amountMin.getValue(),
+                amountMax.getValue(),
+                balanceMin.getValue(),
+                balanceMax.getValue(),
+                qboIdContains.getValue(),
+                sortBy.getValue(),
+                sortDirection.getValue(),
                 pageSize.getValue() == null ? 200 : pageSize.getValue());
         currentRows = cleanupService.list(entityType, filter, effectiveIncludeAll);
         grid.setItems(currentRows);
         summary.setText("Loaded " + currentRows.size() + " records"
+                + " | Sort: " + filter.sortField() + " " + filter.sortDirection()
                 + (effectiveIncludeAll ? " (all pages)." : "."));
+    }
+
+    private void resetFilters() {
+        fromDate.clear();
+        toDate.clear();
+        docRef.clear();
+        party.clear();
+        statusContains.clear();
+        qboIdContains.clear();
+        amountMin.clear();
+        amountMax.clear();
+        balanceMin.clear();
+        balanceMax.clear();
+        sortBy.setValue(QboCleanupSortField.TXN_DATE);
+        sortDirection.setValue(QboSortDirection.DESC);
+        pageSize.setValue(200);
+        summary.setText("Filters reset. Click Search to reload.");
     }
 
     private void runDeleteSelected() {

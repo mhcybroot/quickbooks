@@ -1,6 +1,7 @@
 package com.example.quickbooksimporter.service;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -46,6 +47,7 @@ public class QboCleanupService {
             start += effective.pageSize();
         }
         List<QboTransactionRow> rows = applyLocalFilters(all, effective);
+        rows = applyLocalSort(rows, effective);
         log.debug("Cleanup list result: realmId={}, type={}, count={}", realmId, type, rows.size());
         return rows;
     }
@@ -215,12 +217,38 @@ public class QboCleanupService {
     }
 
     private List<QboTransactionRow> applyLocalFilters(List<QboTransactionRow> rows, QboCleanupFilter filter) {
-        if (filter == null || filter.partyContains() == null || filter.partyContains().isBlank()) {
+        if (filter == null) {
             return rows;
         }
-        String needle = filter.partyContains().trim().toLowerCase();
         return rows.stream()
-                .filter(row -> row.partyName() != null && row.partyName().toLowerCase().contains(needle))
+                .filter(row -> containsIgnoreCase(row.partyName(), filter.partyContains()))
+                .filter(row -> containsIgnoreCase(row.status(), filter.statusContains()))
                 .toList();
+    }
+
+    private List<QboTransactionRow> applyLocalSort(List<QboTransactionRow> rows, QboCleanupFilter filter) {
+        if (rows == null || rows.isEmpty() || filter == null || filter.sortField() == null) {
+            return rows;
+        }
+        Comparator<QboTransactionRow> comparator = switch (filter.sortField()) {
+            case TXN_DATE -> Comparator.comparing(QboTransactionRow::txnDate, Comparator.nullsLast(Comparator.naturalOrder()));
+            case DOC_NUMBER -> Comparator.comparing(QboTransactionRow::externalNumber, String.CASE_INSENSITIVE_ORDER);
+            case PARTY_NAME -> Comparator.comparing(QboTransactionRow::partyName, Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER));
+            case TOTAL_AMOUNT -> Comparator.comparing(QboTransactionRow::totalAmount, Comparator.nullsLast(Comparator.naturalOrder()));
+            case BALANCE -> Comparator.comparing(QboTransactionRow::balance, Comparator.nullsLast(Comparator.naturalOrder()));
+            case QBO_ID -> Comparator.comparing(QboTransactionRow::id, Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER));
+        };
+        comparator = comparator.thenComparing(QboTransactionRow::id, Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER));
+        if (filter.sortDirection() == QboSortDirection.DESC) {
+            comparator = comparator.reversed();
+        }
+        return rows.stream().sorted(comparator).toList();
+    }
+
+    private boolean containsIgnoreCase(String source, String needle) {
+        if (needle == null || needle.isBlank()) {
+            return true;
+        }
+        return source != null && source.toLowerCase().contains(needle.trim().toLowerCase());
     }
 }

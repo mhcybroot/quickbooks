@@ -497,10 +497,17 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
     }
 
     String buildCleanupListQuery(QboCleanupEntityType type, QboCleanupFilter filter, int startPosition, int maxResults) {
+        QboCleanupSortField sortField = filter == null || filter.sortField() == null
+                ? QboCleanupSortField.TXN_DATE
+                : filter.sortField();
+        QboSortDirection sortDirection = filter == null || filter.sortDirection() == null
+                ? QboSortDirection.DESC
+                : filter.sortDirection();
         return "select " + cleanupSelectFields(type)
                 + " from " + type.qboEntityName()
                 + buildWhereClause(type, filter)
-                + " order by TxnDate desc, Id desc"
+                + " order by " + toQboOrderField(type, sortField) + " " + sortDirection.name().toLowerCase()
+                + ", Id desc"
                 + " startposition " + startPosition
                 + " maxresults " + maxResults;
     }
@@ -741,10 +748,49 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
         if (!StringUtils.isBlank(filter.docNumberContains())) {
             conditions.add(type.numberField() + " LIKE '%" + qbLiteral(filter.docNumberContains()) + "%'");
         }
+        if (!StringUtils.isBlank(filter.statusContains())) {
+            conditions.add("PrivateNote LIKE '%" + qbLiteral(filter.statusContains()) + "%'");
+        }
+        if (filter.amountMin() != null) {
+            conditions.add("TotalAmt >= '" + filter.amountMin() + "'");
+        }
+        if (filter.amountMax() != null) {
+            conditions.add("TotalAmt <= '" + filter.amountMax() + "'");
+        }
+        if (filter.balanceMin() != null && balanceField(type) != null) {
+            String balanceField = balanceField(type);
+            conditions.add(balanceField + " >= '" + filter.balanceMin() + "'");
+        }
+        if (filter.balanceMax() != null && balanceField(type) != null) {
+            String balanceField = balanceField(type);
+            conditions.add(balanceField + " <= '" + filter.balanceMax() + "'");
+        }
+        if (!StringUtils.isBlank(filter.idContains())) {
+            conditions.add("Id LIKE '%" + qbLiteral(filter.idContains()) + "%'");
+        }
         if (conditions.isEmpty()) {
             return "";
         }
         return " where " + String.join(" and ", conditions);
+    }
+
+    private String toQboOrderField(QboCleanupEntityType type, QboCleanupSortField sortField) {
+        return switch (sortField) {
+            case TXN_DATE -> "TxnDate";
+            case DOC_NUMBER -> type.numberField();
+            case PARTY_NAME -> "TxnDate";
+            case TOTAL_AMOUNT -> "TotalAmt";
+            case BALANCE -> balanceField(type) == null ? "TxnDate" : balanceField(type);
+            case QBO_ID -> "Id";
+        };
+    }
+
+    private String balanceField(QboCleanupEntityType type) {
+        return switch (type) {
+            case RECEIVE_PAYMENT -> "UnappliedAmt";
+            case INVOICE, SALES_RECEIPT, BILL -> "Balance";
+            case BILL_PAYMENT, EXPENSE -> null;
+        };
     }
 
     private QboTransactionRow toCleanupRow(QboCleanupEntityType type, Map<String, Object> row) {

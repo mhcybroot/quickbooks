@@ -40,7 +40,7 @@ class QboCleanupServiceTest {
 
     @Test
     void invoiceListFetchesAllPagesByDefaultEvenWhenIncludeAllIsFalse() {
-        QboCleanupFilter filter = new QboCleanupFilter(null, null, null, null, 2);
+        QboCleanupFilter filter = new QboCleanupFilter(null, null, null, null, null, null, null, null, null, null, QboCleanupSortField.TXN_DATE, QboSortDirection.DESC, 2);
         when(gateway.listTransactions("realm-1", QboCleanupEntityType.INVOICE, filter, 1))
                 .thenReturn(List.of(row(QboCleanupEntityType.INVOICE, "1", "INV-1"), row(QboCleanupEntityType.INVOICE, "2", "INV-2")));
         when(gateway.listTransactions("realm-1", QboCleanupEntityType.INVOICE, filter, 3))
@@ -58,7 +58,7 @@ class QboCleanupServiceTest {
 
     @Test
     void partyFilterRunsAfterFullInvoiceAggregation() {
-        QboCleanupFilter filter = new QboCleanupFilter(null, null, null, "beta", 2);
+        QboCleanupFilter filter = new QboCleanupFilter(null, null, null, "beta", null, null, null, null, null, null, QboCleanupSortField.TXN_DATE, QboSortDirection.DESC, 2);
         when(gateway.listTransactions("realm-1", QboCleanupEntityType.INVOICE, filter, 1))
                 .thenReturn(List.of(
                         row(QboCleanupEntityType.INVOICE, "1", "INV-1", "Alpha Co"),
@@ -74,7 +74,7 @@ class QboCleanupServiceTest {
 
     @Test
     void nonInvoiceListFetchesAllPagesByDefault() {
-        QboCleanupFilter filter = new QboCleanupFilter(null, null, null, null, 2);
+        QboCleanupFilter filter = new QboCleanupFilter(null, null, null, null, null, null, null, null, null, null, QboCleanupSortField.TXN_DATE, QboSortDirection.DESC, 2);
         when(gateway.listTransactions("realm-1", QboCleanupEntityType.BILL, filter, 1))
                 .thenReturn(List.of(row(QboCleanupEntityType.BILL, "1", "BILL-1"), row(QboCleanupEntityType.BILL, "2", "BILL-2")));
         when(gateway.listTransactions("realm-1", QboCleanupEntityType.BILL, filter, 3))
@@ -89,7 +89,7 @@ class QboCleanupServiceTest {
 
     @Test
     void partyFilterRunsAfterFullNonInvoiceAggregation() {
-        QboCleanupFilter filter = new QboCleanupFilter(null, null, null, "north", 2);
+        QboCleanupFilter filter = new QboCleanupFilter(null, null, null, "north", null, null, null, null, null, null, QboCleanupSortField.TXN_DATE, QboSortDirection.DESC, 2);
         when(gateway.listTransactions("realm-1", QboCleanupEntityType.BILL, filter, 1))
                 .thenReturn(List.of(
                         row(QboCleanupEntityType.BILL, "1", "BILL-1", "East Supply"),
@@ -105,7 +105,7 @@ class QboCleanupServiceTest {
 
     @Test
     void includeAllTrueStillUsesSameAllPagePaginationPath() {
-        QboCleanupFilter filter = new QboCleanupFilter(null, null, null, null, 2);
+        QboCleanupFilter filter = new QboCleanupFilter(null, null, null, null, null, null, null, null, null, null, QboCleanupSortField.TXN_DATE, QboSortDirection.DESC, 2);
         when(gateway.listTransactions("realm-1", QboCleanupEntityType.EXPENSE, filter, 1))
                 .thenReturn(List.of(row(QboCleanupEntityType.EXPENSE, "1", "EXP-1"), row(QboCleanupEntityType.EXPENSE, "2", "EXP-2")));
         when(gateway.listTransactions("realm-1", QboCleanupEntityType.EXPENSE, filter, 3))
@@ -118,11 +118,52 @@ class QboCleanupServiceTest {
         verify(gateway, times(1)).listTransactions("realm-1", QboCleanupEntityType.EXPENSE, filter, 3);
     }
 
+    @Test
+    void localStatusFilterAppliesAfterFetch() {
+        QboCleanupFilter filter = new QboCleanupFilter(
+                null, null, null, null, "matched",
+                null, null, null, null, null,
+                QboCleanupSortField.TXN_DATE, QboSortDirection.DESC, 2);
+        when(gateway.listTransactions("realm-1", QboCleanupEntityType.EXPENSE, filter, 1))
+                .thenReturn(List.of(
+                        row(QboCleanupEntityType.EXPENSE, "1", "EXP-1", "A", "Matched by ops"),
+                        row(QboCleanupEntityType.EXPENSE, "2", "EXP-2", "B", "Pending")));
+        when(gateway.listTransactions("realm-1", QboCleanupEntityType.EXPENSE, filter, 3))
+                .thenReturn(List.of());
+
+        List<QboTransactionRow> result = service.list(QboCleanupEntityType.EXPENSE, filter, false);
+
+        assertEquals(1, result.size());
+        assertEquals("EXP-1", result.getFirst().externalNumber());
+    }
+
+    @Test
+    void localSortByPartyNameAppliedDeterministically() {
+        QboCleanupFilter filter = new QboCleanupFilter(
+                null, null, null, null, null,
+                null, null, null, null, null,
+                QboCleanupSortField.PARTY_NAME, QboSortDirection.ASC, 5);
+        when(gateway.listTransactions("realm-1", QboCleanupEntityType.BILL, filter, 1))
+                .thenReturn(List.of(
+                        row(QboCleanupEntityType.BILL, "2", "BILL-2", "Zulu"),
+                        row(QboCleanupEntityType.BILL, "1", "BILL-1", "Alpha"),
+                        row(QboCleanupEntityType.BILL, "3", "BILL-3", "Echo")));
+
+        List<QboTransactionRow> result = service.list(QboCleanupEntityType.BILL, filter, false);
+
+        assertEquals(List.of("BILL-1", "BILL-3", "BILL-2"),
+                result.stream().map(QboTransactionRow::externalNumber).toList());
+    }
+
     private QboTransactionRow row(QboCleanupEntityType type, String id, String externalNumber) {
         return row(type, id, externalNumber, "Test Party");
     }
 
     private QboTransactionRow row(QboCleanupEntityType type, String id, String externalNumber, String party) {
+        return row(type, id, externalNumber, party, "");
+    }
+
+    private QboTransactionRow row(QboCleanupEntityType type, String id, String externalNumber, String party, String status) {
         return new QboTransactionRow(
                 id,
                 "0",
@@ -132,6 +173,6 @@ class QboCleanupServiceTest {
                 party,
                 BigDecimal.TEN,
                 BigDecimal.ZERO,
-                "");
+                status);
     }
 }
