@@ -92,7 +92,43 @@ class ReconciliationServiceTest {
         assertEquals(1, preview.autoMatched().size());
         assertEquals(ReconciliationTier.TIER1, preview.autoMatched().getFirst().tier());
         assertFalse(preview.autoMatched().getFirst().batch());
+        assertEquals("UNKNOWN", preview.autoMatched().getFirst().patternType());
         assertEquals(1, preview.bankOnly().size());
+    }
+
+    @Test
+    void previewMatchesPatternDrivenZelleRow() throws Exception {
+        Map<String, String> row = new LinkedHashMap<>();
+        row.put("Date", "08/01/2026");
+        row.put("Amount", "120.00");
+        row.put("Ref", "");
+        row.put("Memo", "Zelle payment to FINARA PROPERTY SOLUTIONS LLC for Finara Crew payment; Conf# uscwy55g0");
+
+        ParsedCsvDocument document = new ParsedCsvDocument(
+                List.of("Date", "Amount", "Ref", "Memo"),
+                List.of(new ParsedCsvRow(2, row)));
+        when(parser.parse(any())).thenReturn(document);
+
+        when(gateway.listReconciliationCandidates(eq("realm-1"), any(), any())).thenReturn(List.of(
+                new QboReconCandidate("txn-z", "0", "Payment", LocalDate.of(2026, 8, 2), new BigDecimal("120.00"), "", "FINARA PROPERTY SOLUTIONS LLC", "Conf# uscwy55g0")));
+
+        when(sessionRepository.save(any())).thenAnswer(invocation -> {
+            ReconciliationSessionEntity entity = invocation.getArgument(0);
+            Field idField = ReconciliationSessionEntity.class.getDeclaredField("id");
+            idField.setAccessible(true);
+            idField.set(entity, 11L);
+            return entity;
+        });
+
+        ReconciliationPreview preview = service.previewMatches(
+                "bank.csv",
+                "x".getBytes(),
+                new ReconciliationService.ReconciliationColumnMapping("Date", "Amount", null, null, "Ref", "Memo", null),
+                true,
+                20);
+
+        assertEquals(1, preview.autoMatched().size());
+        assertEquals("ZELLE", preview.autoMatched().getFirst().patternType());
     }
 
     @Test
@@ -145,6 +181,7 @@ class ReconciliationServiceTest {
         assertTrue(csv.contains("txn-5"));
         assertTrue(csv.contains("APPLIED"));
         assertTrue(csv.contains("candidateTxnIds"));
+        assertTrue(csv.contains("patternType"));
         assertNotNull(service.exportFileName(21L));
         assertFalse(service.exportFileName(21L).isBlank());
     }

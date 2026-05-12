@@ -43,6 +43,7 @@ public class ReconciliationService {
     private final QuickBooksConnectionService connectionService;
     private final QuickBooksGateway quickBooksGateway;
     private final ReconciliationSessionRepository sessionRepository;
+    private final BankDescriptionPatternParser patternParser = new BankDescriptionPatternParser();
 
     public ReconciliationService(InvoiceCsvParser parser,
                                  QuickBooksConnectionService connectionService,
@@ -79,6 +80,28 @@ public class ReconciliationService {
         List<ReconciliationMatchResult> bankOnly = new ArrayList<>();
 
         for (BankStatementRow bankRow : bankRows) {
+            BatchDecision woDecision = matchByWorkOrder(bankRow, candidates, windowDays, usedCandidateIds);
+            if (woDecision != null) {
+                if (woDecision.auto) {
+                    autoMatched.add(woDecision.result);
+                } else {
+                    needsReview.add(woDecision.result);
+                }
+                usedCandidateIds.addAll(woDecision.result.candidates().stream().map(QboReconCandidate::txnId).toList());
+                continue;
+            }
+
+            BatchDecision patternDecision = matchByPattern(bankRow, candidates, windowDays, usedCandidateIds);
+            if (patternDecision != null) {
+                if (patternDecision.auto) {
+                    autoMatched.add(patternDecision.result);
+                } else {
+                    needsReview.add(patternDecision.result);
+                }
+                usedCandidateIds.addAll(patternDecision.result.candidates().stream().map(QboReconCandidate::txnId).toList());
+                continue;
+            }
+
             BatchDecision batchDecision = matchBatchByReference(bankRow, candidates, windowDays, usedCandidateIds);
             if (batchDecision != null) {
                 if (batchDecision.auto) {
@@ -104,7 +127,12 @@ public class ReconciliationService {
                         false,
                         "NONE",
                         bankRow.txnDate(),
-                        bankRow.txnDate()));
+                        bankRow.txnDate(),
+                        BankDescriptionPatternType.UNKNOWN.name(),
+                        "",
+                        "",
+                        false,
+                        ""));
                 continue;
             }
             if (usedCandidateIds.contains(decision.candidate.txnId())) {
@@ -120,7 +148,12 @@ public class ReconciliationService {
                         false,
                         "SINGLE",
                         minDate(List.of(decision.candidate)),
-                        maxDate(List.of(decision.candidate))));
+                        maxDate(List.of(decision.candidate)),
+                        BankDescriptionPatternType.UNKNOWN.name(),
+                        "",
+                        "",
+                        false,
+                        ""));
                 continue;
             }
             usedCandidateIds.add(decision.candidate.txnId());
@@ -137,7 +170,12 @@ public class ReconciliationService {
                         false,
                         "SINGLE",
                         minDate(List.of(decision.candidate)),
-                        maxDate(List.of(decision.candidate))));
+                        maxDate(List.of(decision.candidate)),
+                        BankDescriptionPatternType.UNKNOWN.name(),
+                        "",
+                        "",
+                        false,
+                        ""));
             } else {
                 needsReview.add(new ReconciliationMatchResult(
                         bankRow.rowNumber(),
@@ -151,7 +189,12 @@ public class ReconciliationService {
                         false,
                         "SINGLE",
                         minDate(List.of(decision.candidate)),
-                        maxDate(List.of(decision.candidate))));
+                        maxDate(List.of(decision.candidate)),
+                        BankDescriptionPatternType.UNKNOWN.name(),
+                        "",
+                        "",
+                        false,
+                        ""));
             }
         }
 
@@ -209,6 +252,11 @@ public class ReconciliationService {
             row.setAllocationMode(result.allocationMode());
             row.setBatchMatch(result.batch());
             row.setTier(result.tier().name());
+            row.setPatternType(result.patternType());
+            row.setPatternKey(result.patternKey());
+            row.setWoKey(result.woKey());
+            row.setWoMatched(result.woMatched());
+            row.setWoSource(result.woSource());
             row.setConfidence(result.confidence());
             row.setDisposition(result.disposition().name());
             row.setRationale(result.rationale());
@@ -297,7 +345,12 @@ public class ReconciliationService {
                     row.isBatchMatch(),
                     StringUtils.defaultString(row.getAllocationMode(), "NONE"),
                     row.getGroupWindowStart(),
-                    row.getGroupWindowEnd()));
+                    row.getGroupWindowEnd(),
+                    StringUtils.defaultString(row.getPatternType(), BankDescriptionPatternType.UNKNOWN.name()),
+                    StringUtils.defaultString(row.getPatternKey()),
+                    StringUtils.defaultString(row.getWoKey()),
+                    row.isWoMatched(),
+                    StringUtils.defaultString(row.getWoSource())));
         }
 
         session.setAppliedCount(session.getAppliedCount() + applied);
@@ -321,6 +374,7 @@ public class ReconciliationService {
                         "bankRowNumber", "bankTxnDate", "bankAmount", "bankReference", "bankMemo", "bankCounterparty",
                         "qboTxnId", "qboEntityType", "qboTxnDate", "qboAmount", "qboReference", "qboParty",
                         "groupKey", "isBatch", "candidateTxnIds", "candidateCount", "windowDays", "allocationMode",
+                        "patternType", "patternKey", "woKey", "woMatched", "woSource",
                         "tier", "confidence", "disposition", "rationale", "applied", "applySuccess", "applySuccessCount", "applyFailCount", "intuitTid", "applyMessage")
                 .build();
         try (CSVPrinter printer = new CSVPrinter(writer, format)) {
@@ -329,6 +383,7 @@ public class ReconciliationService {
                         session.getAutoMatchedCount(), session.getNeedsReviewCount(), session.getBankOnlyCount(), session.getQboOnlyCount(), session.getAppliedCount(), session.getFailedCount(),
                         null, null, null, null, null, null, null, null, null, null, null, null,
                         null, null, null, null, null, null,
+                        null, null, null, null, null,
                         null, null, null, null, null, null, null, null, null, null);
             } else {
                 List<ReconciliationSessionRowEntity> sorted = session.getRows().stream()
@@ -342,6 +397,7 @@ public class ReconciliationService {
                             row.getBankRowNumber(), row.getBankTxnDate(), row.getBankAmount(), row.getBankReference(), row.getBankMemo(), row.getBankCounterparty(),
                             row.getQboTxnId(), row.getQboEntityType(), row.getQboTxnDate(), row.getQboAmount(), row.getQboReference(), row.getQboParty(),
                             row.getGroupKey(), row.isBatchMatch(), row.getCandidateTxnIds(), row.getCandidateCount(), windowDays, row.getAllocationMode(),
+                            row.getPatternType(), row.getPatternKey(), row.getWoKey(), row.isWoMatched(), row.getWoSource(),
                             row.getTier(), row.getConfidence(), row.getDisposition(), row.getRationale(), row.isApplied(), row.isApplySuccess(), row.getApplySuccessCount(), row.getApplyFailCount(), row.getIntuitTid(), row.getApplyMessage());
                 }
             }
@@ -423,7 +479,12 @@ public class ReconciliationService {
                     true,
                     "BATCH_SUM",
                     minDate(group),
-                    maxDate(group));
+                    maxDate(group),
+                    BankDescriptionPatternType.UNKNOWN.name(),
+                    "",
+                    "",
+                    false,
+                    "");
             return new BatchDecision(true, result);
         }
 
@@ -442,7 +503,12 @@ public class ReconciliationService {
                     true,
                     "BATCH_SUBSET",
                     minDate(subset),
-                    maxDate(subset));
+                    maxDate(subset),
+                    BankDescriptionPatternType.UNKNOWN.name(),
+                    "",
+                    "",
+                    false,
+                    "");
             return new BatchDecision(true, result);
         }
         if (subsets.size() > 1) {
@@ -458,7 +524,12 @@ public class ReconciliationService {
                     true,
                     "AMBIGUOUS_SUBSET",
                     minDate(subsets.getFirst()),
-                    maxDate(subsets.getFirst()));
+                    maxDate(subsets.getFirst()),
+                    BankDescriptionPatternType.UNKNOWN.name(),
+                    "",
+                    "",
+                    false,
+                    "");
             return new BatchDecision(false, result);
         }
 
@@ -475,7 +546,12 @@ public class ReconciliationService {
                     true,
                     "GROUP_REVIEW",
                     minDate(group),
-                    maxDate(group));
+                    maxDate(group),
+                    BankDescriptionPatternType.UNKNOWN.name(),
+                    "",
+                    "",
+                    false,
+                    "");
             return new BatchDecision(false, result);
         }
 
@@ -491,6 +567,171 @@ public class ReconciliationService {
                         .thenComparingInt(decision -> exactRefOverlap(bank.reference(), decision.candidate.reference()) ? 1 : 0)
                         .thenComparing(decision -> decision.candidate.txnId()))
                 .orElse(null);
+    }
+
+    private BatchDecision matchByWorkOrder(BankStatementRow bank,
+                                           List<QboReconCandidate> candidates,
+                                           int dateWindowDays,
+                                           Set<String> alreadyUsed) {
+        ParsedBankPattern bankPattern = parseBankPattern(bank);
+        if (!bankPattern.woMatched()) {
+            return null;
+        }
+        LocalDate from = bank.txnDate().minusDays(dateWindowDays);
+        LocalDate to = bank.txnDate().plusDays(dateWindowDays);
+        String partyNorm = normalizeToken(bank.counterparty());
+        List<QboReconCandidate> group = candidates.stream()
+                .filter(candidate -> !alreadyUsed.contains(candidate.txnId()))
+                .filter(candidate -> candidate.txnDate() != null && !candidate.txnDate().isBefore(from) && !candidate.txnDate().isAfter(to))
+                .filter(candidate -> bankPattern.woKey().equals(parseCandidatePattern(candidate).woKey()))
+                .filter(candidate -> StringUtils.isBlank(partyNorm) || normalizeToken(candidate.party()).contains(partyNorm) || partyNorm.contains(normalizeToken(candidate.party())))
+                .sorted(Comparator.comparing(QboReconCandidate::txnDate, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(QboReconCandidate::txnId))
+                .toList();
+        if (group.isEmpty()) {
+            return null;
+        }
+        String gk = groupKey(bank.reference(), bank.counterparty());
+        BigDecimal total = group.stream().map(QboReconCandidate::signedAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (group.size() == 1 && group.getFirst().signedAmount().compareTo(bank.signedAmount()) == 0) {
+            ReconciliationMatchResult result = new ReconciliationMatchResult(
+                    bank.rowNumber(),
+                    ReconciliationTier.WO_EXACT_AMOUNT_DATEWINDOW,
+                    97,
+                    ReconciliationDisposition.AUTO_MATCHED,
+                    "WO key + amount match within date window",
+                    group.getFirst(),
+                    group,
+                    gk,
+                    false,
+                    "WO_SINGLE",
+                    minDate(group),
+                    maxDate(group),
+                    bankPattern.patternType().name(),
+                    bankPattern.patternKey(),
+                    bankPattern.woKey(),
+                    true,
+                    bankPattern.woSource());
+            return new BatchDecision(true, result);
+        }
+        if (group.size() > 1 && total.compareTo(bank.signedAmount()) == 0) {
+            ReconciliationMatchResult result = new ReconciliationMatchResult(
+                    bank.rowNumber(),
+                    ReconciliationTier.WO_BATCH_SUM,
+                    95,
+                    ReconciliationDisposition.AUTO_MATCHED,
+                    "WO key group sum matched amount",
+                    group.getFirst(),
+                    group,
+                    gk,
+                    true,
+                    "WO_BATCH_SUM",
+                    minDate(group),
+                    maxDate(group),
+                    bankPattern.patternType().name(),
+                    bankPattern.patternKey(),
+                    bankPattern.woKey(),
+                    true,
+                    bankPattern.woSource());
+            return new BatchDecision(true, result);
+        }
+        List<List<QboReconCandidate>> subsets = findSumSubsets(group, bank.signedAmount(), 5);
+        if (subsets.size() == 1 && subsets.getFirst().size() > 1) {
+            List<QboReconCandidate> subset = subsets.getFirst();
+            ReconciliationMatchResult result = new ReconciliationMatchResult(
+                    bank.rowNumber(),
+                    ReconciliationTier.WO_BATCH_SUM,
+                    92,
+                    ReconciliationDisposition.AUTO_MATCHED,
+                    "Unique WO subset matched amount",
+                    subset.getFirst(),
+                    subset,
+                    gk,
+                    true,
+                    "WO_SUBSET",
+                    minDate(subset),
+                    maxDate(subset),
+                    bankPattern.patternType().name(),
+                    bankPattern.patternKey(),
+                    bankPattern.woKey(),
+                    true,
+                    bankPattern.woSource());
+            return new BatchDecision(true, result);
+        }
+        if (subsets.size() > 1) {
+            List<QboReconCandidate> first = subsets.getFirst();
+            ReconciliationMatchResult result = new ReconciliationMatchResult(
+                    bank.rowNumber(),
+                    ReconciliationTier.WO_BATCH_SUM,
+                    80,
+                    ReconciliationDisposition.NEEDS_REVIEW,
+                    "Ambiguous WO subsets found: " + subsets.size(),
+                    first.getFirst(),
+                    first,
+                    gk,
+                    true,
+                    "WO_AMBIGUOUS",
+                    minDate(first),
+                    maxDate(first),
+                    bankPattern.patternType().name(),
+                    bankPattern.patternKey(),
+                    bankPattern.woKey(),
+                    true,
+                    bankPattern.woSource());
+            return new BatchDecision(false, result);
+        }
+        return null;
+    }
+
+    private BatchDecision matchByPattern(BankStatementRow bank,
+                                         List<QboReconCandidate> candidates,
+                                         int dateWindowDays,
+                                         Set<String> alreadyUsed) {
+        ParsedBankPattern bankPattern = parseBankPattern(bank);
+        if (bankPattern.patternType() == BankDescriptionPatternType.UNKNOWN) {
+            return null;
+        }
+        int localWindow = bankPattern.patternType() == BankDescriptionPatternType.CARD_PURCHASE ? 3 : dateWindowDays;
+        LocalDate from = bank.txnDate().minusDays(localWindow);
+        LocalDate to = bank.txnDate().plusDays(localWindow);
+        List<QboReconCandidate> group = candidates.stream()
+                .filter(candidate -> !alreadyUsed.contains(candidate.txnId()))
+                .filter(candidate -> candidate.signedAmount() != null && candidate.signedAmount().compareTo(bank.signedAmount()) == 0)
+                .filter(candidate -> candidate.txnDate() != null && !candidate.txnDate().isBefore(from) && !candidate.txnDate().isAfter(to))
+                .filter(candidate -> compatiblePattern(bankPattern, parseCandidatePattern(candidate)))
+                .sorted(Comparator.comparingInt((QboReconCandidate candidate) -> scorePattern(bankPattern, parseCandidatePattern(candidate), bank, candidate))
+                        .reversed()
+                        .thenComparingInt(candidate -> Math.abs(daysBetween(bank.txnDate(), candidate.txnDate())))
+                        .thenComparing(QboReconCandidate::txnId))
+                .toList();
+        if (group.isEmpty()) {
+            return null;
+        }
+        QboReconCandidate best = group.getFirst();
+        ParsedBankPattern candidatePattern = parseCandidatePattern(best);
+        int confidence = scorePattern(bankPattern, candidatePattern, bank, best);
+        ReconciliationDisposition disposition = highTrustPattern(bankPattern.patternType()) && confidence >= 90
+                ? ReconciliationDisposition.AUTO_MATCHED
+                : ReconciliationDisposition.NEEDS_REVIEW;
+        ReconciliationMatchResult result = new ReconciliationMatchResult(
+                bank.rowNumber(),
+                ReconciliationTier.TIER2,
+                confidence,
+                disposition,
+                "Pattern match: " + bankPattern.patternType().name(),
+                best,
+                List.of(best),
+                groupKey(bank.reference(), bank.counterparty()),
+                false,
+                "PATTERN_SINGLE",
+                minDate(List.of(best)),
+                maxDate(List.of(best)),
+                bankPattern.patternType().name(),
+                bankPattern.patternKey(),
+                bankPattern.woKey(),
+                bankPattern.woMatched(),
+                bankPattern.woSource());
+        return new BatchDecision(disposition == ReconciliationDisposition.AUTO_MATCHED, result);
     }
 
     private MatchDecision score(BankStatementRow bank, QboReconCandidate candidate, int dateWindowDays) {
@@ -694,6 +935,54 @@ public class ReconciliationService {
         String realmId = connectionService.getActiveConnection().getRealmId();
         List<QboReconCandidate> candidates = quickBooksGateway.listReconciliationCandidates(realmId, from, to);
         return candidates.stream().collect(Collectors.toMap(QboReconCandidate::txnId, item -> item, (a, b) -> a));
+    }
+
+    private ParsedBankPattern parseBankPattern(BankStatementRow bank) {
+        return patternParser.parse(String.join(" ",
+                StringUtils.defaultString(bank.reference()),
+                StringUtils.defaultString(bank.memo()),
+                StringUtils.defaultString(bank.counterparty())));
+    }
+
+    private ParsedBankPattern parseCandidatePattern(QboReconCandidate candidate) {
+        return patternParser.parse(String.join(" ",
+                StringUtils.defaultString(candidate.reference()),
+                StringUtils.defaultString(candidate.party()),
+                StringUtils.defaultString(candidate.privateNote())));
+    }
+
+    private boolean compatiblePattern(ParsedBankPattern bank, ParsedBankPattern candidate) {
+        return switch (bank.patternType()) {
+            case ZELLE -> tokenOverlap(bank.zelleCounterparty(), candidate.zelleCounterparty() + " " + candidate.patternKey()) >= 30
+                    || tokenOverlap(bank.zelleCounterparty(), candidate.patternKey()) >= 30;
+            case ACH -> !StringUtils.isBlank(bank.achIndn()) && normalizeToken(candidate.patternKey()).contains(normalizeToken(bank.achIndn()))
+                    || (!StringUtils.isBlank(bank.achId()) && normalizeToken(candidate.patternKey()).contains(normalizeToken(bank.achId())))
+                    || (!StringUtils.isBlank(bank.achDes()) && normalizeToken(candidate.patternKey()).contains(normalizeToken(bank.achDes())));
+            case CARD_PURCHASE -> tokenOverlap(bank.cardMerchant(), candidate.patternKey()) >= 30;
+            case MOBILE_DEPOSIT, ATM, COUNTER_CREDIT, TRANSFER, RETURN_CHECK, FEE -> true;
+            case UNKNOWN -> false;
+        };
+    }
+
+    private int scorePattern(ParsedBankPattern bankPattern, ParsedBankPattern candidatePattern, BankStatementRow bank, QboReconCandidate candidate) {
+        int base = switch (bankPattern.patternType()) {
+            case ZELLE -> 82;
+            case ACH -> 84;
+            case CARD_PURCHASE -> 80;
+            case MOBILE_DEPOSIT, ATM, COUNTER_CREDIT, TRANSFER -> 72;
+            case RETURN_CHECK, FEE -> 68;
+            case UNKNOWN -> 60;
+        };
+        int overlap = tokenOverlap(bankPattern.patternKey(), candidatePattern.patternKey());
+        int party = tokenOverlap(bank.counterparty(), candidate.party());
+        int datePenalty = Math.min(20, Math.abs(daysBetween(bank.txnDate(), candidate.txnDate())) * 2);
+        return Math.max(55, Math.min(98, base + overlap / 4 + party / 5 - datePenalty));
+    }
+
+    private boolean highTrustPattern(BankDescriptionPatternType patternType) {
+        return patternType == BankDescriptionPatternType.ZELLE
+                || patternType == BankDescriptionPatternType.ACH
+                || patternType == BankDescriptionPatternType.CARD_PURCHASE;
     }
 
     private String groupKey(String reference, String party) {

@@ -69,6 +69,18 @@ public class ReconciliationSessionRowEntity {
     @Column(nullable = false)
     private boolean batchMatch;
 
+    private String patternType;
+
+    @Column(columnDefinition = "text")
+    private String patternKey;
+
+    private String woKey;
+
+    @Column(nullable = false)
+    private boolean woMatched;
+
+    private String woSource;
+
     private String tier;
 
     private int confidence;
@@ -273,6 +285,46 @@ public class ReconciliationSessionRowEntity {
 
     public void setTier(String tier) {
         this.tier = tier;
+    }
+
+    public String getPatternType() {
+        return patternType;
+    }
+
+    public void setPatternType(String patternType) {
+        this.patternType = patternType;
+    }
+
+    public String getPatternKey() {
+        return patternKey;
+    }
+
+    public void setPatternKey(String patternKey) {
+        this.patternKey = patternKey;
+    }
+
+    public String getWoKey() {
+        return woKey;
+    }
+
+    public void setWoKey(String woKey) {
+        this.woKey = woKey;
+    }
+
+    public boolean isWoMatched() {
+        return woMatched;
+    }
+
+    public void setWoMatched(boolean woMatched) {
+        this.woMatched = woMatched;
+    }
+
+    public String getWoSource() {
+        return woSource;
+    }
+
+    public void setWoSource(String woSource) {
+        this.woSource = woSource;
     }
 
     public int getConfidence() {

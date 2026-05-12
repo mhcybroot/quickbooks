@@ -101,7 +101,7 @@ public class ReconciliationView extends VerticalLayout {
                 referenceHeader, memoHeader, counterpartyHeader, dryRun);
         mapping.setWidthFull();
         mapping.setWrap(true);
-        matchMode.setItems("All", "Batch only", "Single only");
+        matchMode.setItems("All", "Batch only", "Single only", "WO-only", "Zelle-only", "ACH-only", "Card-only", "Unknown");
         matchMode.setValue("All");
         matchMode.addValueChangeListener(event -> refreshModeFilter());
         mapping.add(matchMode);
@@ -127,6 +127,9 @@ public class ReconciliationView extends VerticalLayout {
         grid.addColumn(ReconciliationMatchResult::candidateCount).setHeader("Cand #");
         grid.addColumn(ReconciliationMatchResult::candidateTxnIds).setHeader("Candidate Txn IDs").setFlexGrow(1);
         grid.addColumn(ReconciliationMatchResult::groupKey).setHeader("Group Key");
+        grid.addColumn(ReconciliationMatchResult::patternType).setHeader("Pattern");
+        grid.addColumn(ReconciliationMatchResult::patternKey).setHeader("Pattern Key").setFlexGrow(1);
+        grid.addColumn(ReconciliationMatchResult::woKey).setHeader("WO Key");
         grid.addColumn(ReconciliationMatchResult::tier).setHeader("Tier");
         grid.addColumn(ReconciliationMatchResult::confidence).setHeader("Confidence");
         grid.addColumn(ReconciliationMatchResult::disposition).setHeader("Disposition");
@@ -214,6 +217,11 @@ public class ReconciliationView extends VerticalLayout {
         return rows.stream().filter(row -> switch (mode) {
             case "Batch only" -> row.batch();
             case "Single only" -> !row.batch();
+            case "WO-only" -> row.woMatched();
+            case "Zelle-only" -> "ZELLE".equals(row.patternType());
+            case "ACH-only" -> "ACH".equals(row.patternType());
+            case "Card-only" -> "CARD_PURCHASE".equals(row.patternType());
+            case "Unknown" -> "UNKNOWN".equals(row.patternType());
             default -> true;
         }).toList();
     }

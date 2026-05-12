@@ -12,7 +12,12 @@ public record ReconciliationMatchResult(
         boolean batch,
         String allocationMode,
         java.time.LocalDate groupWindowStart,
-        java.time.LocalDate groupWindowEnd) {
+        java.time.LocalDate groupWindowEnd,
+        String patternType,
+        String patternKey,
+        String woKey,
+        boolean woMatched,
+        String woSource) {
 
     public int candidateCount() {
         return candidates == null ? 0 : candidates.size();
