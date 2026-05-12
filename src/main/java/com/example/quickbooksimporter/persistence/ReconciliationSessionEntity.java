@@ -3,6 +3,7 @@ package com.example.quickbooksimporter.persistence;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -52,7 +53,7 @@ public class ReconciliationSessionEntity {
 
     private Instant completedAt;
 
-    @OneToMany(mappedBy = "session", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToMany(mappedBy = "session", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     private List<ReconciliationSessionRowEntity> rows = new ArrayList<>();
 
     public Long getId() {
