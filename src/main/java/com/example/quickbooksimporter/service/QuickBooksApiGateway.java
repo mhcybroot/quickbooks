@@ -17,6 +17,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.apache.commons.lang3.StringUtils;
@@ -613,6 +614,47 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
         return List.of();
     }
 
+    @Override
+    public List<QboReconCandidate> listReconciliationCandidates(String realmId, LocalDate fromDate, LocalDate toDate) {
+        LocalDate from = fromDate == null ? LocalDate.now().minusDays(31) : fromDate;
+        LocalDate to = toDate == null ? LocalDate.now() : toDate;
+        List<QboReconCandidate> all = new java.util.ArrayList<>();
+        all.addAll(fetchReconCandidates(realmId, "Payment",
+                "Id, SyncToken, TxnDate, TotalAmt, PaymentRefNum, CustomerRef, PrivateNote",
+                "PaymentRefNum", "CustomerRef", false, from, to));
+        all.addAll(fetchReconCandidates(realmId, "SalesReceipt",
+                "Id, SyncToken, TxnDate, TotalAmt, DocNumber, CustomerRef, PrivateNote",
+                "DocNumber", "CustomerRef", false, from, to));
+        all.addAll(fetchReconCandidates(realmId, "Purchase",
+                "Id, SyncToken, TxnDate, TotalAmt, DocNumber, EntityRef, PrivateNote",
+                "DocNumber", "EntityRef", true, from, to));
+        all.addAll(fetchReconCandidates(realmId, "BillPayment",
+                "Id, SyncToken, TxnDate, TotalAmt, DocNumber, VendorRef, PrivateNote",
+                "DocNumber", "VendorRef", true, from, to));
+        all.sort(Comparator.comparing(QboReconCandidate::txnDate, Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(QboReconCandidate::txnId));
+        return all;
+    }
+
+    @Override
+    public QuickBooksReconcileMarkResult markTransactionReconciled(String realmId, QboReconCandidate candidate, String note) {
+        if (candidate == null || StringUtils.isBlank(candidate.txnId()) || StringUtils.isBlank(candidate.syncToken())) {
+            return new QuickBooksReconcileMarkResult(false, "Missing candidate transaction identity/sync token", null);
+        }
+        String endpoint = "/" + candidate.entityType().toLowerCase();
+        try {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("Id", candidate.txnId());
+            payload.put("SyncToken", candidate.syncToken());
+            payload.put("sparse", true);
+            payload.put("PrivateNote", note);
+            post(realmId, "/v3/company/" + realmId + endpoint, payload, Map.class);
+            return new QuickBooksReconcileMarkResult(true, "Marked reconciled", null);
+        } catch (RestClientResponseException ex) {
+            return new QuickBooksReconcileMarkResult(false, extractQboMessage(ex), extractIntuitTid(ex));
+        }
+    }
+
     private Map<String, Object> findCustomerRef(String realmId, String customerName) {
         QueryResponse response = query(realmId, "select Id from Customer where DisplayName = '" + qbLiteral(customerName) + "'");
         List<Map<String, Object>> customers = castList(response.queryResponse(), "Customer");
@@ -836,6 +878,37 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
 
     private void post(String realmId, String path, Map<String, Object> payload) {
         post(realmId, path, payload, Object.class);
+    }
+
+    private List<QboReconCandidate> fetchReconCandidates(String realmId,
+                                                         String entityName,
+                                                         String selectFields,
+                                                         String refField,
+                                                         String partyRefField,
+                                                         boolean outflow,
+                                                         LocalDate from,
+                                                         LocalDate to) {
+        String query = "select " + selectFields + " from " + entityName
+                + " where TxnDate >= '" + from + "' and TxnDate <= '" + to + "'"
+                + " order by TxnDate desc startposition 1 maxresults 1000";
+        QueryResponse response = query(realmId, query);
+        List<Map<String, Object>> rows = castList(response.queryResponse(), entityName);
+        return rows.stream().map(row -> {
+            Map<String, Object> partyRef = castMap(row.get(partyRefField));
+            BigDecimal amount = toBigDecimal(row.get("TotalAmt"));
+            if (outflow) {
+                amount = amount.negate();
+            }
+            return new QboReconCandidate(
+                    valueOrEmpty(row.get("Id")),
+                    valueOrEmpty(row.get("SyncToken")),
+                    entityName,
+                    parseDate(row.get("TxnDate")),
+                    amount,
+                    valueOrEmpty(row.get(refField)),
+                    valueOrEmpty(partyRef == null ? null : partyRef.get("name")),
+                    valueOrEmpty(row.get("PrivateNote")));
+        }).toList();
     }
 
     private <T> T post(String realmId, String path, Map<String, Object> payload, Class<T> responseType) {

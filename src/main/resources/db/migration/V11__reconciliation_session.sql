@@ -1,0 +1,40 @@
+create table reconciliation_session (
+    id bigserial primary key,
+    source_file_name varchar(255) not null,
+    dry_run boolean not null,
+    status varchar(64) not null,
+    auto_matched_count integer not null,
+    needs_review_count integer not null,
+    bank_only_count integer not null,
+    qbo_only_count integer not null,
+    applied_count integer not null,
+    failed_count integer not null,
+    created_at timestamp with time zone not null,
+    completed_at timestamp with time zone
+);
+
+create table reconciliation_session_row (
+    id bigserial primary key,
+    session_id bigint not null references reconciliation_session(id) on delete cascade,
+    bank_row_number integer not null,
+    bank_txn_date date,
+    bank_amount numeric(18,2),
+    bank_reference varchar(255),
+    bank_memo text,
+    bank_counterparty varchar(255),
+    qbo_txn_id varchar(255),
+    qbo_sync_token varchar(64),
+    qbo_entity_type varchar(64),
+    qbo_txn_date date,
+    qbo_amount numeric(18,2),
+    qbo_reference varchar(255),
+    qbo_party varchar(255),
+    tier varchar(16),
+    confidence integer not null default 0,
+    disposition varchar(32),
+    rationale text,
+    applied boolean not null default false,
+    apply_success boolean not null default false,
+    intuit_tid varchar(255),
+    apply_message text
+);

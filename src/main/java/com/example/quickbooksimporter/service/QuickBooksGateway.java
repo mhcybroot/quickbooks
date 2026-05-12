@@ -72,4 +72,8 @@ public interface QuickBooksGateway {
     QboTransactionRow findTransactionById(String realmId, QboCleanupEntityType type, String id);
 
     List<QboDependencyLink> findDirectDependencyLinks(String realmId, QboCleanupEntityType type, QboTransactionRow transaction);
+
+    List<QboReconCandidate> listReconciliationCandidates(String realmId, LocalDate fromDate, LocalDate toDate);
+
+    QuickBooksReconcileMarkResult markTransactionReconciled(String realmId, QboReconCandidate candidate, String note);
 }
