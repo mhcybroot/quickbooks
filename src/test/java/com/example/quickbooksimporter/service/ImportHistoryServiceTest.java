@@ -1,13 +1,17 @@
 package com.example.quickbooksimporter.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
 import com.example.quickbooksimporter.domain.EntityType;
+import com.example.quickbooksimporter.domain.ImportRowStatus;
 import com.example.quickbooksimporter.domain.ImportRunStatus;
+import com.example.quickbooksimporter.persistence.ImportRowResultEntity;
 import com.example.quickbooksimporter.persistence.ImportRunEntity;
 import com.example.quickbooksimporter.repository.ImportBatchRepository;
 import com.example.quickbooksimporter.repository.ImportRunRepository;
+import java.lang.reflect.Field;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -51,6 +55,65 @@ class ImportHistoryServiceTest {
 
         assertEquals(1, filtered.size());
         assertEquals("invoice-may.csv", filtered.getFirst().getSourceFileName());
+    }
+
+    @Test
+    void buildRunExportCsvIncludesMetadataAndRowDataWithEscaping() {
+        ImportRunEntity run = run("invoice.csv", EntityType.INVOICE, ImportRunStatus.PARTIAL_FAILURE,
+                LocalDate.of(2026, 5, 7).atStartOfDay().toInstant(ZoneOffset.UTC));
+        run.setTotalRows(3);
+        run.setValidRows(2);
+        run.setInvalidRows(1);
+        run.setDuplicateRows(0);
+        run.setAttemptedRows(2);
+        run.setSkippedRows(1);
+        run.setImportedRows(1);
+
+        ImportRowResultEntity row = new ImportRowResultEntity();
+        row.setRowNumber(2);
+        row.setSourceIdentifier("INV-1002");
+        row.setStatus(ImportRowStatus.INVALID);
+        row.setMessage("Bad amount, line 2");
+        row.setCreatedEntityId("123");
+        row.setRawData("{\"a\":1,\n\"b\":2}");
+        row.setNormalizedData("{\"x\":\"y\"}");
+        run.getRowResults().add(row);
+
+        String csv = service.buildRunExportCsv(run);
+
+        assertTrue(csv.contains("runId,entityType,status,sourceFileName"));
+        assertTrue(csv.contains("invoice.csv"));
+        assertTrue(csv.contains("PARTIAL_FAILURE"));
+        assertTrue(csv.contains("INV-1002"));
+        assertTrue(csv.contains("\"Bad amount, line 2\""));
+        assertTrue(csv.contains("\"{\"\"a\"\":1,"));
+    }
+
+    @Test
+    void buildRunExportCsvEmitsMetadataRowWhenNoRowResults() {
+        ImportRunEntity run = run("payments.csv", EntityType.PAYMENT, ImportRunStatus.IMPORTED,
+                LocalDate.of(2026, 5, 8).atStartOfDay().toInstant(ZoneOffset.UTC));
+        run.setTotalRows(2);
+        run.setImportedRows(2);
+
+        String csv = service.buildRunExportCsv(run);
+        String[] lines = csv.split("\\R");
+
+        assertEquals(2, lines.length);
+        assertTrue(lines[1].contains("payments.csv"));
+        assertTrue(lines[1].contains("IMPORTED"));
+    }
+
+    @Test
+    void runExportFileNameUsesRunIdAndEntityType() throws Exception {
+        ImportRunEntity run = run("expenses.csv", EntityType.EXPENSE, ImportRunStatus.IMPORTED, Instant.now());
+        Field idField = ImportRunEntity.class.getDeclaredField("id");
+        idField.setAccessible(true);
+        idField.set(run, 44L);
+
+        String fileName = service.runExportFileName(run);
+
+        assertEquals("import-run-44-expense.csv", fileName);
     }
 
     private ImportRunEntity run(String sourceFile, EntityType entityType, ImportRunStatus status, Instant createdAt) {

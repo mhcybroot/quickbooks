@@ -7,6 +7,7 @@ import com.example.quickbooksimporter.persistence.ImportRowResultEntity;
 import com.example.quickbooksimporter.persistence.ImportRunEntity;
 import com.example.quickbooksimporter.service.ImportHistoryService;
 import com.example.quickbooksimporter.ui.components.UiComponents;
+import com.vaadin.flow.component.html.Anchor;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.datepicker.DatePicker;
@@ -20,7 +21,11 @@ import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 import jakarta.annotation.security.PermitAll;
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Optional;
+import com.vaadin.flow.server.StreamResource;
 
 @Route(value = "history", layout = MainLayout.class)
 @PageTitle("Import History")
@@ -36,6 +41,7 @@ public class ImportHistoryView extends VerticalLayout {
     private final DatePicker dateFilter = new DatePicker("Created On/After");
     private final TextField fileFilter = new TextField("Source File");
     private final Paragraph runScopeSummary = new Paragraph("Showing the latest runs across all import types.");
+    private final Anchor downloadRunCsv = new Anchor();
 
     public ImportHistoryView(ImportHistoryService historyService) {
         this.historyService = historyService;
@@ -114,6 +120,7 @@ public class ImportHistoryView extends VerticalLayout {
         runGrid.asSingleSelect().addValueChangeListener(event -> {
             ImportRunEntity selected = event.getValue();
             rowGrid.setItems(selected == null ? List.of() : selected.getRowResults());
+            configureRunDownload(selected);
         });
     }
 
@@ -128,7 +135,10 @@ public class ImportHistoryView extends VerticalLayout {
         VerticalLayout detail = UiComponents.card(new H3("Row Results"), rowGrid);
         detail.setWidth("58%");
         detail.setSizeFull();
-        VerticalLayout runsCard = UiComponents.card(new H3("Run Results"), runScopeSummary, runGrid);
+        downloadRunCsv.setText("Download Run CSV");
+        downloadRunCsv.setVisible(false);
+        downloadRunCsv.getElement().setAttribute("download", true);
+        VerticalLayout runsCard = UiComponents.card(new H3("Run Results"), runScopeSummary, downloadRunCsv, runGrid);
         runsCard.setWidth("42%");
         runsCard.setMinWidth("480px");
 
@@ -147,7 +157,28 @@ public class ImportHistoryView extends VerticalLayout {
                 fileFilter.getValue());
         runGrid.setItems(runs);
         rowGrid.setItems(List.of());
+        runGrid.deselectAll();
+        configureRunDownload(null);
         batchGrid.setItems(historyService.recentBatches());
         runScopeSummary.setText("Showing " + runs.size() + " filtered runs across all batches and standalone imports.");
+    }
+
+    private void configureRunDownload(ImportRunEntity selected) {
+        if (selected == null || selected.getId() == null) {
+            downloadRunCsv.setVisible(false);
+            downloadRunCsv.setHref("");
+            return;
+        }
+        Optional<ImportRunEntity> run = historyService.findRun(selected.getId());
+        if (run.isEmpty()) {
+            downloadRunCsv.setVisible(false);
+            downloadRunCsv.setHref("");
+            return;
+        }
+        String csv = historyService.buildRunExportCsv(run.get());
+        String fileName = historyService.runExportFileName(run.get());
+        downloadRunCsv.setHref(new StreamResource(fileName,
+                () -> new ByteArrayInputStream(csv.getBytes(StandardCharsets.UTF_8))));
+        downloadRunCsv.setVisible(true);
     }
 }
