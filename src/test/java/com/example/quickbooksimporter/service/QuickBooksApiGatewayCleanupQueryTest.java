@@ -67,9 +67,9 @@ class QuickBooksApiGatewayCleanupQueryTest {
         assertTrue(query.contains("TxnDate >= '2026-02-01'"));
         assertTrue(query.contains("TxnDate <= '2026-02-28'"));
         assertTrue(query.contains("PaymentRefNum LIKE '%BP-%'"));
-        assertTrue(query.contains("UnappliedAmt >= '1'"));
-        assertTrue(query.contains("UnappliedAmt <= '20'"));
-        assertTrue(query.contains("order by UnappliedAmt desc, Id desc"));
+        assertTrue(!query.contains("UnappliedAmt >="));
+        assertTrue(!query.contains("UnappliedAmt <="));
+        assertTrue(query.contains("order by TxnDate desc, Id desc"));
         assertTrue(query.contains("startposition 101"));
         assertTrue(query.contains("maxresults 100"));
     }

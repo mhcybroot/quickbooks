@@ -787,9 +787,9 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
 
     private String balanceField(QboCleanupEntityType type) {
         return switch (type) {
-            case RECEIVE_PAYMENT -> "UnappliedAmt";
             case INVOICE, SALES_RECEIPT, BILL -> "Balance";
-            case BILL_PAYMENT, EXPENSE -> null;
+            // QBO exposes UnappliedAmt on Payment but does not allow querying/sorting by it.
+            case RECEIVE_PAYMENT, BILL_PAYMENT, EXPENSE -> null;
         };
     }
 
