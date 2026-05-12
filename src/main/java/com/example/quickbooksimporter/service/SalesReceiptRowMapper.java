@@ -5,8 +5,6 @@ import com.example.quickbooksimporter.domain.ParsedCsvRow;
 import com.example.quickbooksimporter.domain.SalesReceiptLine;
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Map;
 import org.apache.commons.lang3.StringUtils;
@@ -15,12 +13,14 @@ import org.springframework.stereotype.Service;
 @Service
 public class SalesReceiptRowMapper {
 
-    private static final List<DateTimeFormatter> DATE_FORMATS = List.of(
-            DateTimeFormatter.ofPattern("MM/dd/yy"),
-            DateTimeFormatter.ofPattern("MM/dd/yyyy"),
-            DateTimeFormatter.ISO_LOCAL_DATE);
-
     public SalesReceiptRowMapped map(ParsedCsvRow row, Map<NormalizedSalesReceiptField, String> mapping) {
+        return map(row, mapping, DateFormatOption.AUTO);
+    }
+
+    public SalesReceiptRowMapped map(ParsedCsvRow row,
+                                     Map<NormalizedSalesReceiptField, String> mapping,
+                                     DateFormatOption dateFormatOption) {
+        DateFormatOption effective = dateFormatOption == null ? DateFormatOption.AUTO : dateFormatOption;
         BigDecimal quantity = parseDecimal(value(row.values(), mapping.get(NormalizedSalesReceiptField.QUANTITY)));
         BigDecimal rate = parseDecimal(value(row.values(), mapping.get(NormalizedSalesReceiptField.RATE)));
         BigDecimal amount = parseDecimal(value(row.values(), mapping.get(NormalizedSalesReceiptField.AMOUNT)));
@@ -46,7 +46,7 @@ public class SalesReceiptRowMapper {
                 row.values(),
                 value(row.values(), mapping.get(NormalizedSalesReceiptField.RECEIPT_NO)),
                 value(row.values(), mapping.get(NormalizedSalesReceiptField.CUSTOMER)),
-                parseDate(value(row.values(), mapping.get(NormalizedSalesReceiptField.TXN_DATE))),
+                parseDate(value(row.values(), mapping.get(NormalizedSalesReceiptField.TXN_DATE)), effective),
                 value(row.values(), mapping.get(NormalizedSalesReceiptField.PAYMENT_METHOD)),
                 value(row.values(), mapping.get(NormalizedSalesReceiptField.DEPOSIT_ACCOUNT)),
                 line);
@@ -59,17 +59,11 @@ public class SalesReceiptRowMapper {
         return StringUtils.trimToNull(values.get(header));
     }
 
-    private LocalDate parseDate(String value) {
+    private LocalDate parseDate(String value, DateFormatOption option) {
         if (value == null) {
             return null;
         }
-        for (DateTimeFormatter formatter : DATE_FORMATS) {
-            try {
-                return LocalDate.parse(value, formatter);
-            } catch (DateTimeParseException ignored) {
-            }
-        }
-        throw new IllegalArgumentException("Invalid date: " + value);
+        return option.parse(value.trim());
     }
 
     private BigDecimal parseDecimal(String value) {

@@ -5,6 +5,7 @@ import com.example.quickbooksimporter.domain.ImportPreviewRow;
 import com.example.quickbooksimporter.domain.ImportRowStatus;
 import com.example.quickbooksimporter.domain.NormalizedInvoiceField;
 import com.example.quickbooksimporter.service.CsvMappingProfileService;
+import com.example.quickbooksimporter.service.DateFormatOption;
 import com.example.quickbooksimporter.service.ImportExecutionResult;
 import com.example.quickbooksimporter.service.ImportExecutionMode;
 import com.example.quickbooksimporter.service.ImportExecutionOptions;
@@ -56,6 +57,7 @@ public class InvoiceImportView extends VerticalLayout {
     private final MemoryBuffer uploadBuffer = new MemoryBuffer();
     private final Upload upload = new Upload(uploadBuffer);
     private final ComboBox<MappingProfileSummary> savedProfiles = new ComboBox<>("Saved Mapping Profiles");
+    private final ComboBox<DateFormatOption> invoiceDateFormat = new ComboBox<>("Invoice Date Format");
     private final ComboBox<ImportRowStatus> previewFilter = new ComboBox<>("Preview Filter");
     private final TextField profileName = new TextField("New Profile Name");
     private final Button groupingToggle = new Button();
@@ -136,6 +138,9 @@ public class InvoiceImportView extends VerticalLayout {
     private void configureProfiles() {
         savedProfiles.setItems(mappingProfileService.listProfiles());
         savedProfiles.setItemLabelGenerator(MappingProfileSummary::name);
+        invoiceDateFormat.setItems(DateFormatOption.values());
+        invoiceDateFormat.setItemLabelGenerator(DateFormatOption::label);
+        invoiceDateFormat.setValue(DateFormatOption.AUTO);
         savedProfiles.addValueChangeListener(event -> {
             if (event.getValue() == null || currentHeaders.isEmpty()) {
                 return;
@@ -152,7 +157,7 @@ public class InvoiceImportView extends VerticalLayout {
                 .ifPresent(savedProfiles::setValue));
         groupingToggle.addClickListener(event -> toggleInvoiceGrouping());
         updateGroupingToggleUi();
-        HorizontalLayout profileRow = new HorizontalLayout(savedProfiles, profileName, useLastProfile, groupingToggle);
+        HorizontalLayout profileRow = new HorizontalLayout(savedProfiles, profileName, invoiceDateFormat, useLastProfile, groupingToggle);
         profileRow.setWidthFull();
         profileRow.expand(savedProfiles, profileName);
         add(UiComponents.card(UiComponents.sectionTitle("Stage 2: Mapping Profile"), profileRow, mappingHint, groupingHint));
@@ -217,7 +222,12 @@ public class InvoiceImportView extends VerticalLayout {
             notifyWarning("Upload a CSV file first.");
             return;
         }
-        currentPreview = invoiceImportService.preview(uploadedFileName, uploadedBytes, currentMapping(), invoiceGroupingEnabled);
+        currentPreview = invoiceImportService.preview(
+                uploadedFileName,
+                uploadedBytes,
+                currentMapping(),
+                invoiceGroupingEnabled,
+                invoiceDateFormat.getValue() == null ? DateFormatOption.AUTO : invoiceDateFormat.getValue());
         applyPreviewFilter();
         long readyCount = currentPreview.rows().stream().filter(row -> row.status() == ImportRowStatus.READY).count();
         long invalidCount = currentPreview.rows().stream().filter(row -> row.status() == ImportRowStatus.INVALID).count();

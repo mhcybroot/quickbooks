@@ -6,6 +6,7 @@ import com.example.quickbooksimporter.domain.ImportRowStatus;
 import com.example.quickbooksimporter.domain.NormalizedBillPaymentField;
 import com.example.quickbooksimporter.service.BillPaymentImportService;
 import com.example.quickbooksimporter.service.BillPaymentMappingProfileService;
+import com.example.quickbooksimporter.service.DateFormatOption;
 import com.example.quickbooksimporter.service.ImportExecutionResult;
 import com.example.quickbooksimporter.service.ImportExecutionMode;
 import com.example.quickbooksimporter.service.ImportExecutionOptions;
@@ -47,6 +48,7 @@ public class BillPaymentImportView extends VerticalLayout {
     private final MemoryBuffer uploadBuffer = new MemoryBuffer();
     private final Upload upload = new Upload(uploadBuffer);
     private final ComboBox<MappingProfileSummary> savedProfiles = new ComboBox<>("Saved Bill Payment Mapping Profiles");
+    private final ComboBox<DateFormatOption> paymentDateFormat = new ComboBox<>("Payment Date Format");
     private final ComboBox<ImportRowStatus> previewFilter = new ComboBox<>("Preview Filter");
     private final TextField profileName = new TextField("New Profile Name");
     private final FormLayout mappingForm = new FormLayout();
@@ -85,12 +87,15 @@ public class BillPaymentImportView extends VerticalLayout {
     private void configureProfiles() {
         savedProfiles.setItems(mappingProfileService.listProfiles());
         savedProfiles.setItemLabelGenerator(MappingProfileSummary::name);
+        paymentDateFormat.setItems(DateFormatOption.values());
+        paymentDateFormat.setItemLabelGenerator(DateFormatOption::label);
+        paymentDateFormat.setValue(DateFormatOption.AUTO);
         savedProfiles.addValueChangeListener(event -> {
             if (event.getValue() == null || currentHeaders.isEmpty()) return;
             Map<NormalizedBillPaymentField, String> mapping = mappingProfileService.loadProfile(event.getValue().id());
             fieldSelectors.forEach((f, s) -> { s.setItems(currentHeaders); s.setValue(mapping.get(f)); });
         });
-        HorizontalLayout row = new HorizontalLayout(savedProfiles, profileName);
+        HorizontalLayout row = new HorizontalLayout(savedProfiles, profileName, paymentDateFormat);
         row.setWidthFull(); row.expand(savedProfiles, profileName);
         add(UiComponents.card(UiComponents.sectionTitle("Stage 2: Mapping Profile"), row));
     }
@@ -126,7 +131,11 @@ public class BillPaymentImportView extends VerticalLayout {
     }
     private void previewImport() {
         if (uploadedBytes == null) { notifyWarning("Upload a CSV file first."); return; }
-        currentPreview = importService.preview(uploadedFileName, uploadedBytes, currentMapping());
+        currentPreview = importService.preview(
+                uploadedFileName,
+                uploadedBytes,
+                currentMapping(),
+                paymentDateFormat.getValue() == null ? DateFormatOption.AUTO : paymentDateFormat.getValue());
         applyPreviewFilter();
         long ready = currentPreview.rows().stream().filter(r -> r.status() == ImportRowStatus.READY).count();
         long invalid = currentPreview.rows().stream().filter(r -> r.status() == ImportRowStatus.INVALID).count();

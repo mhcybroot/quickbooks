@@ -54,9 +54,19 @@ public class SalesReceiptImportService {
     }
 
     public SalesReceiptImportPreview preview(String fileName, byte[] bytes, Map<NormalizedSalesReceiptField, String> mapping) {
+        return preview(fileName, bytes, mapping, DateFormatOption.AUTO);
+    }
+
+    public SalesReceiptImportPreview preview(String fileName,
+                                             byte[] bytes,
+                                             Map<NormalizedSalesReceiptField, String> mapping,
+                                             DateFormatOption dateFormatOption) {
         ParsedCsvDocument document = parser.parse(new ByteArrayInputStream(bytes));
         Map<NormalizedSalesReceiptField, String> finalMapping = new EnumMap<>(mapping);
-        List<SalesReceiptRowValidationResult> validations = validateGrouped(document, finalMapping);
+        List<SalesReceiptRowValidationResult> validations = validateGrouped(
+                document,
+                finalMapping,
+                dateFormatOption == null ? DateFormatOption.AUTO : dateFormatOption);
         List<SalesReceiptImportPreviewRow> rows = validations.stream()
                 .map(result -> new SalesReceiptImportPreviewRow(
                         result.rowNumber(),
@@ -149,13 +159,14 @@ public class SalesReceiptImportService {
     }
 
     private List<SalesReceiptRowValidationResult> validateGrouped(ParsedCsvDocument document,
-                                                                  Map<NormalizedSalesReceiptField, String> mapping) {
+                                                                  Map<NormalizedSalesReceiptField, String> mapping,
+                                                                  DateFormatOption dateFormatOption) {
         Map<String, List<SalesReceiptRowMapper.SalesReceiptRowMapped>> groups = new HashMap<>();
         List<SalesReceiptRowValidationResult> failures = new ArrayList<>();
 
         for (var row : document.rows()) {
             try {
-                SalesReceiptRowMapper.SalesReceiptRowMapped mapped = rowMapper.map(row, mapping);
+                SalesReceiptRowMapper.SalesReceiptRowMapped mapped = rowMapper.map(row, mapping, dateFormatOption);
                 String key = mapped.receiptNo() == null ? "ROW-" + mapped.rowNumber() : mapped.receiptNo();
                 groups.computeIfAbsent(key, ignored -> new ArrayList<>()).add(mapped);
             } catch (Exception exception) {

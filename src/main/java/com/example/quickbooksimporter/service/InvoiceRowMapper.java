@@ -6,8 +6,6 @@ import com.example.quickbooksimporter.domain.NormalizedInvoiceField;
 import com.example.quickbooksimporter.domain.ParsedCsvRow;
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Map;
 import org.apache.commons.lang3.StringUtils;
@@ -16,12 +14,14 @@ import org.springframework.stereotype.Component;
 @Component
 public class InvoiceRowMapper {
 
-    private static final List<DateTimeFormatter> DATE_FORMATS = List.of(
-            DateTimeFormatter.ofPattern("MM/dd/yy"),
-            DateTimeFormatter.ofPattern("MM/dd/yyyy"),
-            DateTimeFormatter.ISO_LOCAL_DATE);
-
     public NormalizedInvoice map(ParsedCsvRow row, Map<NormalizedInvoiceField, String> mapping) {
+        return map(row, mapping, DateFormatOption.AUTO);
+    }
+
+    public NormalizedInvoice map(ParsedCsvRow row,
+                                 Map<NormalizedInvoiceField, String> mapping,
+                                 DateFormatOption dateFormatOption) {
+        DateFormatOption effective = dateFormatOption == null ? DateFormatOption.AUTO : dateFormatOption;
         InvoiceLine line = new InvoiceLine(
                 get(row, mapping, NormalizedInvoiceField.ITEM_NAME),
                 get(row, mapping, NormalizedInvoiceField.ITEM_DESCRIPTION),
@@ -30,12 +30,12 @@ public class InvoiceRowMapper {
                 decimal(get(row, mapping, NormalizedInvoiceField.ITEM_AMOUNT)),
                 "Y".equalsIgnoreCase(get(row, mapping, NormalizedInvoiceField.TAXABLE)),
                 percent(get(row, mapping, NormalizedInvoiceField.TAX_RATE)),
-                date(get(row, mapping, NormalizedInvoiceField.SERVICE_DATE)));
+                date(get(row, mapping, NormalizedInvoiceField.SERVICE_DATE), effective));
         return new NormalizedInvoice(
                 get(row, mapping, NormalizedInvoiceField.INVOICE_NO),
                 get(row, mapping, NormalizedInvoiceField.CUSTOMER),
-                date(get(row, mapping, NormalizedInvoiceField.INVOICE_DATE)),
-                date(get(row, mapping, NormalizedInvoiceField.DUE_DATE)),
+                date(get(row, mapping, NormalizedInvoiceField.INVOICE_DATE), effective),
+                date(get(row, mapping, NormalizedInvoiceField.DUE_DATE), effective),
                 get(row, mapping, NormalizedInvoiceField.TERMS),
                 get(row, mapping, NormalizedInvoiceField.LOCATION),
                 get(row, mapping, NormalizedInvoiceField.MEMO),
@@ -50,17 +50,11 @@ public class InvoiceRowMapper {
         return StringUtils.trimToNull(row.values().get(header));
     }
 
-    private LocalDate date(String value) {
+    private LocalDate date(String value, DateFormatOption option) {
         if (value == null) {
             return null;
         }
-        for (DateTimeFormatter formatter : DATE_FORMATS) {
-            try {
-                return LocalDate.parse(value, formatter);
-            } catch (DateTimeParseException ignored) {
-            }
-        }
-        throw new IllegalArgumentException("Invalid date: " + value);
+        return option.parse(value.trim());
     }
 
     private BigDecimal decimal(String value) {

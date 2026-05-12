@@ -6,24 +6,23 @@ import com.example.quickbooksimporter.domain.NormalizedBillPaymentField;
 import com.example.quickbooksimporter.domain.ParsedCsvRow;
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
-import java.util.List;
 import java.util.Map;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
 @Service
 public class BillPaymentRowMapper {
-    private static final List<DateTimeFormatter> DATE_FORMATS = List.of(
-            DateTimeFormatter.ofPattern("MM/dd/yy"),
-            DateTimeFormatter.ofPattern("MM/dd/yyyy"),
-            DateTimeFormatter.ISO_LOCAL_DATE);
-
     public NormalizedBillPayment map(ParsedCsvRow row, Map<NormalizedBillPaymentField, String> mapping) {
+        return map(row, mapping, DateFormatOption.AUTO);
+    }
+
+    public NormalizedBillPayment map(ParsedCsvRow row,
+                                     Map<NormalizedBillPaymentField, String> mapping,
+                                     DateFormatOption dateFormatOption) {
+        DateFormatOption effective = dateFormatOption == null ? DateFormatOption.AUTO : dateFormatOption;
         return new NormalizedBillPayment(
                 value(row.values(), mapping.get(NormalizedBillPaymentField.VENDOR)),
-                date(value(row.values(), mapping.get(NormalizedBillPaymentField.PAYMENT_DATE))),
+                date(value(row.values(), mapping.get(NormalizedBillPaymentField.PAYMENT_DATE)), effective),
                 value(row.values(), mapping.get(NormalizedBillPaymentField.REFERENCE_NO)),
                 value(row.values(), mapping.get(NormalizedBillPaymentField.PAYMENT_ACCOUNT)),
                 decimal(value(row.values(), mapping.get(NormalizedBillPaymentField.PAYMENT_AMOUNT))),
@@ -36,12 +35,9 @@ public class BillPaymentRowMapper {
         if (StringUtils.isBlank(header)) return null;
         return StringUtils.trimToNull(values.get(header));
     }
-    private LocalDate date(String v) {
+    private LocalDate date(String v, DateFormatOption option) {
         if (v == null) return null;
-        for (DateTimeFormatter f : DATE_FORMATS) {
-            try { return LocalDate.parse(v, f); } catch (DateTimeParseException ignored) {}
-        }
-        throw new IllegalArgumentException("Invalid payment date: " + v);
+        return option.parse(v.trim());
     }
     private BigDecimal decimal(String v) {
         if (v == null) return null;

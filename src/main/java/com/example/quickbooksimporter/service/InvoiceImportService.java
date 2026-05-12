@@ -63,18 +63,27 @@ public class InvoiceImportService {
     }
 
     public ImportPreview preview(String fileName, byte[] bytes, Map<NormalizedInvoiceField, String> mapping) {
-        return preview(fileName, bytes, mapping, false);
+        return preview(fileName, bytes, mapping, false, DateFormatOption.AUTO);
     }
 
     public ImportPreview preview(String fileName,
                                  byte[] bytes,
                                  Map<NormalizedInvoiceField, String> mapping,
                                  boolean groupingEnabled) {
+        return preview(fileName, bytes, mapping, groupingEnabled, DateFormatOption.AUTO);
+    }
+
+    public ImportPreview preview(String fileName,
+                                 byte[] bytes,
+                                 Map<NormalizedInvoiceField, String> mapping,
+                                 boolean groupingEnabled,
+                                 DateFormatOption dateFormatOption) {
         ParsedCsvDocument document = parser.parse(new ByteArrayInputStream(bytes));
         Map<NormalizedInvoiceField, String> finalMapping = new EnumMap<>(mapping);
+        DateFormatOption effective = dateFormatOption == null ? DateFormatOption.AUTO : dateFormatOption;
         List<RowValidationResult> validations = groupingEnabled
-                ? validateGrouped(document, finalMapping)
-                : document.rows().stream().map(row -> validateRow(row, finalMapping)).toList();
+                ? validateGrouped(document, finalMapping, effective)
+                : document.rows().stream().map(row -> validateRow(row, finalMapping, effective)).toList();
         List<ImportPreviewRow> rows = validations.stream()
                 .map(result -> new ImportPreviewRow(
                         result.rowNumber(),
@@ -185,21 +194,23 @@ public class InvoiceImportService {
     }
 
     private RowValidationResult validateRow(com.example.quickbooksimporter.domain.ParsedCsvRow row,
-                                            Map<NormalizedInvoiceField, String> mapping) {
+                                            Map<NormalizedInvoiceField, String> mapping,
+                                            DateFormatOption dateFormatOption) {
         try {
-            return validator.validate(row.rowNumber(), row.values(), rowMapper.map(row, mapping));
+            return validator.validate(row.rowNumber(), row.values(), rowMapper.map(row, mapping, dateFormatOption));
         } catch (Exception exception) {
             return new RowValidationResult(row.rowNumber(), row, null, ImportRowStatus.INVALID, exception.getMessage(), row.values());
         }
     }
 
     private List<RowValidationResult> validateGrouped(ParsedCsvDocument document,
-                                                      Map<NormalizedInvoiceField, String> mapping) {
+                                                      Map<NormalizedInvoiceField, String> mapping,
+                                                      DateFormatOption dateFormatOption) {
         Map<String, List<GroupedInvoiceSource>> groups = new HashMap<>();
         List<RowValidationResult> validations = new ArrayList<>();
         for (var row : document.rows()) {
             try {
-                NormalizedInvoice invoice = rowMapper.map(row, mapping);
+                NormalizedInvoice invoice = rowMapper.map(row, mapping, dateFormatOption);
                 String key = invoice.invoiceNo() == null ? "ROW-" + row.rowNumber() : invoice.invoiceNo();
                 groups.computeIfAbsent(key, ignored -> new ArrayList<>())
                         .add(new GroupedInvoiceSource(row.rowNumber(), row.values(), invoice));

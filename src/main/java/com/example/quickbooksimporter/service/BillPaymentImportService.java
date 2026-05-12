@@ -44,11 +44,19 @@ public class BillPaymentImportService {
     }
 
     public BillPaymentImportPreview preview(String fileName, byte[] bytes, Map<NormalizedBillPaymentField, String> mapping) {
+        return preview(fileName, bytes, mapping, DateFormatOption.AUTO);
+    }
+
+    public BillPaymentImportPreview preview(String fileName,
+                                            byte[] bytes,
+                                            Map<NormalizedBillPaymentField, String> mapping,
+                                            DateFormatOption dateFormatOption) {
         ParsedCsvDocument doc = parser.parse(new ByteArrayInputStream(bytes));
         Map<NormalizedBillPaymentField, String> finalMapping = new EnumMap<>(mapping);
         Map<String, BigDecimal> allocatedByBill = new HashMap<>();
+        DateFormatOption effective = dateFormatOption == null ? DateFormatOption.AUTO : dateFormatOption;
         List<BillPaymentRowValidationResult> validations = doc.rows().stream()
-                .map(r -> validateRow(r, finalMapping, allocatedByBill)).toList();
+                .map(r -> validateRow(r, finalMapping, allocatedByBill, effective)).toList();
         List<BillPaymentImportPreviewRow> rows = validations.stream().map(v -> new BillPaymentImportPreviewRow(
                 v.rowNumber(),
                 v.payment() == null ? "" : v.payment().vendor(),
@@ -137,9 +145,10 @@ public class BillPaymentImportService {
 
     private BillPaymentRowValidationResult validateRow(com.example.quickbooksimporter.domain.ParsedCsvRow row,
                                                        Map<NormalizedBillPaymentField, String> mapping,
-                                                       Map<String, BigDecimal> allocatedByBill) {
+                                                       Map<String, BigDecimal> allocatedByBill,
+                                                       DateFormatOption dateFormatOption) {
         try {
-            NormalizedBillPayment payment = rowMapper.map(row, mapping);
+            NormalizedBillPayment payment = rowMapper.map(row, mapping, dateFormatOption);
             String billNo = payment == null || payment.application() == null ? null : payment.application().billNo();
             BigDecimal alreadyAllocated = billNo == null ? BigDecimal.ZERO : allocatedByBill.getOrDefault(billNo, BigDecimal.ZERO);
             BillPaymentRowValidationResult result = validator.validate(row.rowNumber(), row.values(), payment, alreadyAllocated);

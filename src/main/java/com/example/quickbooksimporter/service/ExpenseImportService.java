@@ -49,10 +49,18 @@ public class ExpenseImportService {
     }
 
     public ExpenseImportPreview preview(String fileName, byte[] bytes, Map<NormalizedExpenseField, String> mapping) {
+        return preview(fileName, bytes, mapping, DateFormatOption.AUTO);
+    }
+
+    public ExpenseImportPreview preview(String fileName,
+                                        byte[] bytes,
+                                        Map<NormalizedExpenseField, String> mapping,
+                                        DateFormatOption dateFormatOption) {
         ParsedCsvDocument document = parser.parse(new ByteArrayInputStream(bytes));
         Map<NormalizedExpenseField, String> finalMapping = new EnumMap<>(mapping);
+        DateFormatOption effective = dateFormatOption == null ? DateFormatOption.AUTO : dateFormatOption;
         List<ExpenseRowValidationResult> validations = document.rows().stream()
-                .map(row -> validateRow(row, finalMapping))
+                .map(row -> validateRow(row, finalMapping, effective))
                 .toList();
         List<ExpenseImportPreviewRow> rows = validations.stream()
                 .map(result -> new ExpenseImportPreviewRow(
@@ -145,9 +153,10 @@ public class ExpenseImportService {
     }
 
     private ExpenseRowValidationResult validateRow(com.example.quickbooksimporter.domain.ParsedCsvRow row,
-                                                   Map<NormalizedExpenseField, String> mapping) {
+                                                   Map<NormalizedExpenseField, String> mapping,
+                                                   DateFormatOption dateFormatOption) {
         try {
-            return validator.validate(row.rowNumber(), row.values(), rowMapper.map(row, mapping));
+            return validator.validate(row.rowNumber(), row.values(), rowMapper.map(row, mapping, dateFormatOption));
         } catch (Exception exception) {
             return new ExpenseRowValidationResult(row.rowNumber(), row, null, ImportRowStatus.INVALID, exception.getMessage(), row.values());
         }

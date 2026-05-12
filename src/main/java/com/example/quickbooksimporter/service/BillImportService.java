@@ -47,9 +47,19 @@ public class BillImportService {
     }
 
     public BillImportPreview preview(String fileName, byte[] bytes, Map<NormalizedBillField, String> mapping) {
+        return preview(fileName, bytes, mapping, DateFormatOption.AUTO);
+    }
+
+    public BillImportPreview preview(String fileName,
+                                     byte[] bytes,
+                                     Map<NormalizedBillField, String> mapping,
+                                     DateFormatOption dateFormatOption) {
         ParsedCsvDocument doc = parser.parse(new ByteArrayInputStream(bytes));
         Map<NormalizedBillField, String> finalMapping = new EnumMap<>(mapping);
-        List<BillRowValidationResult> validations = validateGrouped(doc, finalMapping);
+        List<BillRowValidationResult> validations = validateGrouped(
+                doc,
+                finalMapping,
+                dateFormatOption == null ? DateFormatOption.AUTO : dateFormatOption);
         List<BillImportPreviewRow> rows = validations.stream().map(v -> new BillImportPreviewRow(
                 v.rowNumber(),
                 v.bill() == null ? "" : v.bill().billNo(),
@@ -140,12 +150,14 @@ public class BillImportService {
         return new ImportExecutionResult(saved, failed == 0, message);
     }
 
-    private List<BillRowValidationResult> validateGrouped(ParsedCsvDocument doc, Map<NormalizedBillField, String> mapping) {
+    private List<BillRowValidationResult> validateGrouped(ParsedCsvDocument doc,
+                                                          Map<NormalizedBillField, String> mapping,
+                                                          DateFormatOption dateFormatOption) {
         Map<String, List<BillRowMapper.BillRowMapped>> groups = new HashMap<>();
         List<BillRowValidationResult> validations = new ArrayList<>();
         for (var row : doc.rows()) {
             try {
-                var mapped = rowMapper.map(row, mapping);
+                var mapped = rowMapper.map(row, mapping, dateFormatOption);
                 String key = mapped.billNo() == null ? "ROW-" + mapped.rowNumber() : mapped.billNo();
                 groups.computeIfAbsent(key, k -> new ArrayList<>()).add(mapped);
             } catch (Exception ex) {

@@ -9,6 +9,7 @@ import com.example.quickbooksimporter.service.BillMappingProfileService;
 import com.example.quickbooksimporter.service.ImportExecutionResult;
 import com.example.quickbooksimporter.service.ImportExecutionMode;
 import com.example.quickbooksimporter.service.ImportExecutionOptions;
+import com.example.quickbooksimporter.service.DateFormatOption;
 import com.example.quickbooksimporter.service.InvoiceCsvParser;
 import com.example.quickbooksimporter.service.MappingProfileSummary;
 import com.example.quickbooksimporter.service.ParsedCsvDocument;
@@ -47,6 +48,7 @@ public class BillImportView extends VerticalLayout {
     private final MemoryBuffer uploadBuffer = new MemoryBuffer();
     private final Upload upload = new Upload(uploadBuffer);
     private final ComboBox<MappingProfileSummary> savedProfiles = new ComboBox<>("Saved Bill Mapping Profiles");
+    private final ComboBox<DateFormatOption> txnDateFormat = new ComboBox<>("Bill Date Format");
     private final ComboBox<ImportRowStatus> previewFilter = new ComboBox<>("Preview Filter");
     private final TextField profileName = new TextField("New Profile Name");
     private final FormLayout mappingForm = new FormLayout();
@@ -85,12 +87,15 @@ public class BillImportView extends VerticalLayout {
     private void configureProfiles() {
         savedProfiles.setItems(mappingProfileService.listProfiles());
         savedProfiles.setItemLabelGenerator(MappingProfileSummary::name);
+        txnDateFormat.setItems(DateFormatOption.values());
+        txnDateFormat.setItemLabelGenerator(DateFormatOption::label);
+        txnDateFormat.setValue(DateFormatOption.AUTO);
         savedProfiles.addValueChangeListener(event -> {
             if (event.getValue() == null || currentHeaders.isEmpty()) return;
             Map<NormalizedBillField, String> mapping = mappingProfileService.loadProfile(event.getValue().id());
             fieldSelectors.forEach((f, s) -> { s.setItems(currentHeaders); s.setValue(mapping.get(f)); });
         });
-        HorizontalLayout row = new HorizontalLayout(savedProfiles, profileName);
+        HorizontalLayout row = new HorizontalLayout(savedProfiles, profileName, txnDateFormat);
         row.setWidthFull(); row.expand(savedProfiles, profileName);
         add(UiComponents.card(UiComponents.sectionTitle("Stage 2: Mapping Profile"), row));
     }
@@ -126,7 +131,11 @@ public class BillImportView extends VerticalLayout {
     }
     private void previewImport() {
         if (uploadedBytes == null) { notifyWarning("Upload a CSV file first."); return; }
-        currentPreview = importService.preview(uploadedFileName, uploadedBytes, currentMapping());
+        currentPreview = importService.preview(
+                uploadedFileName,
+                uploadedBytes,
+                currentMapping(),
+                txnDateFormat.getValue() == null ? DateFormatOption.AUTO : txnDateFormat.getValue());
         applyPreviewFilter();
         long ready = currentPreview.rows().stream().filter(r -> r.status() == ImportRowStatus.READY).count();
         long invalid = currentPreview.rows().stream().filter(r -> r.status() == ImportRowStatus.INVALID).count();

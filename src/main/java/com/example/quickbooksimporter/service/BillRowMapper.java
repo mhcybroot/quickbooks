@@ -5,21 +5,20 @@ import com.example.quickbooksimporter.domain.NormalizedBillField;
 import com.example.quickbooksimporter.domain.ParsedCsvRow;
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
-import java.util.List;
 import java.util.Map;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
 @Service
 public class BillRowMapper {
-    private static final List<DateTimeFormatter> DATE_FORMATS = List.of(
-            DateTimeFormatter.ofPattern("MM/dd/yy"),
-            DateTimeFormatter.ofPattern("MM/dd/yyyy"),
-            DateTimeFormatter.ISO_LOCAL_DATE);
-
     public BillRowMapped map(ParsedCsvRow row, Map<NormalizedBillField, String> mapping) {
+        return map(row, mapping, DateFormatOption.AUTO);
+    }
+
+    public BillRowMapped map(ParsedCsvRow row,
+                             Map<NormalizedBillField, String> mapping,
+                             DateFormatOption dateFormatOption) {
+        DateFormatOption effective = dateFormatOption == null ? DateFormatOption.AUTO : dateFormatOption;
         BigDecimal qty = decimal(value(row.values(), mapping.get(NormalizedBillField.QUANTITY)));
         BigDecimal rate = decimal(value(row.values(), mapping.get(NormalizedBillField.RATE)));
         BigDecimal amount = decimal(value(row.values(), mapping.get(NormalizedBillField.AMOUNT)));
@@ -43,8 +42,8 @@ public class BillRowMapper {
                 row.rowNumber(), row.values(),
                 value(row.values(), mapping.get(NormalizedBillField.BILL_NO)),
                 value(row.values(), mapping.get(NormalizedBillField.VENDOR)),
-                date(value(row.values(), mapping.get(NormalizedBillField.TXN_DATE))),
-                date(value(row.values(), mapping.get(NormalizedBillField.DUE_DATE))),
+                date(value(row.values(), mapping.get(NormalizedBillField.TXN_DATE)), effective),
+                date(value(row.values(), mapping.get(NormalizedBillField.DUE_DATE)), effective),
                 value(row.values(), mapping.get(NormalizedBillField.AP_ACCOUNT)),
                 line);
     }
@@ -54,12 +53,9 @@ public class BillRowMapper {
         return StringUtils.trimToNull(values.get(header));
     }
 
-    private LocalDate date(String v) {
+    private LocalDate date(String v, DateFormatOption option) {
         if (v == null) return null;
-        for (DateTimeFormatter f : DATE_FORMATS) {
-            try { return LocalDate.parse(v, f); } catch (DateTimeParseException ignored) {}
-        }
-        throw new IllegalArgumentException("Invalid date: " + v);
+        return option.parse(v.trim());
     }
 
     private BigDecimal decimal(String v) {

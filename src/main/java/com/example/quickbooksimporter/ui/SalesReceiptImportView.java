@@ -10,6 +10,7 @@ import com.example.quickbooksimporter.service.ImportExecutionOptions;
 import com.example.quickbooksimporter.service.InvoiceCsvParser;
 import com.example.quickbooksimporter.service.MappingProfileSummary;
 import com.example.quickbooksimporter.service.ParsedCsvDocument;
+import com.example.quickbooksimporter.service.DateFormatOption;
 import com.example.quickbooksimporter.service.SalesReceiptImportService;
 import com.example.quickbooksimporter.service.SalesReceiptMappingProfileService;
 import com.example.quickbooksimporter.ui.components.UiComponents;
@@ -49,6 +50,7 @@ public class SalesReceiptImportView extends VerticalLayout {
     private final MemoryBuffer uploadBuffer = new MemoryBuffer();
     private final Upload upload = new Upload(uploadBuffer);
     private final ComboBox<MappingProfileSummary> savedProfiles = new ComboBox<>("Saved Receipt Mapping Profiles");
+    private final ComboBox<DateFormatOption> txnDateFormat = new ComboBox<>("Transaction Date Format");
     private final ComboBox<ImportRowStatus> previewFilter = new ComboBox<>("Preview Filter");
     private final TextField profileName = new TextField("New Profile Name");
     private final FormLayout mappingForm = new FormLayout();
@@ -105,6 +107,9 @@ public class SalesReceiptImportView extends VerticalLayout {
     private void configureProfiles() {
         savedProfiles.setItems(mappingProfileService.listProfiles());
         savedProfiles.setItemLabelGenerator(MappingProfileSummary::name);
+        txnDateFormat.setItems(DateFormatOption.values());
+        txnDateFormat.setItemLabelGenerator(DateFormatOption::label);
+        txnDateFormat.setValue(DateFormatOption.AUTO);
         savedProfiles.addValueChangeListener(event -> {
             if (event.getValue() == null || currentHeaders.isEmpty()) {
                 return;
@@ -115,7 +120,7 @@ public class SalesReceiptImportView extends VerticalLayout {
                 selector.setValue(mapping.get(field));
             });
         });
-        HorizontalLayout profileRow = new HorizontalLayout(savedProfiles, profileName);
+        HorizontalLayout profileRow = new HorizontalLayout(savedProfiles, profileName, txnDateFormat);
         profileRow.setWidthFull();
         profileRow.expand(savedProfiles, profileName);
         add(UiComponents.card(UiComponents.sectionTitle("Stage 2: Mapping Profile"), profileRow));
@@ -165,7 +170,11 @@ public class SalesReceiptImportView extends VerticalLayout {
             notifyWarning("Upload a CSV file first.");
             return;
         }
-        currentPreview = importService.preview(uploadedFileName, uploadedBytes, currentMapping());
+        currentPreview = importService.preview(
+                uploadedFileName,
+                uploadedBytes,
+                currentMapping(),
+                txnDateFormat.getValue() == null ? DateFormatOption.AUTO : txnDateFormat.getValue());
         applyPreviewFilter();
         long readyCount = currentPreview.rows().stream().filter(row -> row.status() == ImportRowStatus.READY).count();
         long invalidCount = currentPreview.rows().stream().filter(row -> row.status() == ImportRowStatus.INVALID).count();
