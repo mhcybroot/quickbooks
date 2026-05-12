@@ -15,6 +15,7 @@ import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.datepicker.DatePicker;
 import com.vaadin.flow.component.dialog.Dialog;
+import com.vaadin.flow.component.formlayout.FormLayout;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.html.H3;
@@ -75,17 +76,40 @@ public abstract class QboCleanupPageBase extends VerticalLayout {
         sortBy.setValue(QboCleanupSortField.TXN_DATE);
         sortDirection.setItems(QboSortDirection.values());
         sortDirection.setValue(QboSortDirection.DESC);
+        fromDate.setWidthFull();
+        toDate.setWidthFull();
+        docRef.setWidthFull();
+        party.setWidthFull();
+        statusContains.setWidthFull();
+        qboIdContains.setWidthFull();
+        amountMin.setWidthFull();
+        amountMax.setWidthFull();
+        balanceMin.setWidthFull();
+        balanceMax.setWidthFull();
+        sortBy.setWidthFull();
+        sortDirection.setWidthFull();
+        pageSize.setWidthFull();
         searchButton.addThemeName("primary");
         searchButton.addClickListener(event -> search(false));
         resetButton.addClickListener(event -> resetFilters());
-        HorizontalLayout row = new HorizontalLayout(
+
+        FormLayout filterForm = new FormLayout();
+        filterForm.setWidthFull();
+        filterForm.setResponsiveSteps(
+                new FormLayout.ResponsiveStep("0", 1),
+                new FormLayout.ResponsiveStep("700px", 2),
+                new FormLayout.ResponsiveStep("1100px", 4));
+        filterForm.add(
                 fromDate, toDate, docRef, party, statusContains, qboIdContains,
                 amountMin, amountMax, balanceMin, balanceMax,
-                sortBy, sortDirection, pageSize, searchButton, resetButton);
-        row.setWidthFull();
-        row.expand(docRef, party, statusContains, qboIdContains);
-        row.setAlignItems(Alignment.END);
-        add(UiComponents.card(UiComponents.sectionTitle("Filters"), row, summary));
+                sortBy, sortDirection, pageSize);
+
+        HorizontalLayout filterActions = new HorizontalLayout(searchButton, resetButton);
+        filterActions.setWidthFull();
+        filterActions.setJustifyContentMode(JustifyContentMode.END);
+        filterActions.setDefaultVerticalComponentAlignment(Alignment.END);
+
+        add(UiComponents.card(UiComponents.sectionTitle("Filters"), filterForm, filterActions, summary));
     }
 
     private void configureGrid() {
