@@ -7,9 +7,9 @@ import com.example.quickbooksimporter.domain.NormalizedExpenseField;
 import com.example.quickbooksimporter.service.ExpenseImportService;
 import com.example.quickbooksimporter.service.ExpenseMappingProfileService;
 import com.example.quickbooksimporter.service.DateFormatOption;
-import com.example.quickbooksimporter.service.ImportExecutionResult;
 import com.example.quickbooksimporter.service.ImportExecutionMode;
 import com.example.quickbooksimporter.service.ImportExecutionOptions;
+import com.example.quickbooksimporter.service.ImportBackgroundService;
 import com.example.quickbooksimporter.service.InvoiceCsvParser;
 import com.example.quickbooksimporter.service.MappingProfileSummary;
 import com.example.quickbooksimporter.service.ParsedCsvDocument;
@@ -46,6 +46,7 @@ public class ExpenseImportView extends VerticalLayout {
     private final InvoiceCsvParser parser;
     private final ExpenseMappingProfileService mappingProfileService;
     private final ExpenseImportService expenseImportService;
+    private final ImportBackgroundService backgroundService;
 
     private final MemoryBuffer uploadBuffer = new MemoryBuffer();
     private final Upload upload = new Upload(uploadBuffer);
@@ -66,10 +67,12 @@ public class ExpenseImportView extends VerticalLayout {
 
     public ExpenseImportView(InvoiceCsvParser parser,
                              ExpenseMappingProfileService mappingProfileService,
-                             ExpenseImportService expenseImportService) {
+                             ExpenseImportService expenseImportService,
+                             ImportBackgroundService backgroundService) {
         this.parser = parser;
         this.mappingProfileService = mappingProfileService;
         this.expenseImportService = expenseImportService;
+        this.backgroundService = backgroundService;
         addClassName("corp-page");
         setSizeFull();
         add(new H2("Expense Import"),
@@ -195,17 +198,15 @@ public class ExpenseImportView extends VerticalLayout {
             notifyWarning("Run preview first.");
             return;
         }
-        ImportExecutionResult result = expenseImportService.execute(
+        backgroundService.enqueue(
+                com.example.quickbooksimporter.domain.EntityType.EXPENSE,
                 uploadedFileName,
                 savedProfiles.getOptionalValue().map(MappingProfileSummary::name).orElse(profileName.getValue()),
                 currentPreview,
                 new ImportExecutionOptions(null, null, null, mode));
-        if (result.success()) {
-            notifySuccess(result.message());
-        } else {
-            notifyWarning(result.message());
-        }
-        summary.setText(result.message());
+        String message = "Background import started. Open Import History to track live progress.";
+        notifySuccess(message);
+        summary.setText(message);
     }
 
     private Map<NormalizedExpenseField, String> currentMapping() {

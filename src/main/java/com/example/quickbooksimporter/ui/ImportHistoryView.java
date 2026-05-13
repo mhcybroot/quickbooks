@@ -50,6 +50,7 @@ public class ImportHistoryView extends VerticalLayout {
 
         add(new H2("Import History & Operations"),
                 new Paragraph("Review cross-entity runs, batch membership, row-level failures, and recent operational throughput."));
+        getUI().ifPresent(ui -> ui.addPollListener(event -> refreshRuns()));
         configureFilters();
         configureBatchGrid();
         configureRunGrid();
@@ -63,6 +64,7 @@ public class ImportHistoryView extends VerticalLayout {
         statusFilter.setItems(ImportRunStatus.values());
 
         Button apply = new Button("Apply Filters", event -> refreshRuns());
+        Button refresh = new Button("Refresh", event -> refreshRuns());
         Button reset = new Button("Reset", event -> {
             batchGrid.deselectAll();
             entityFilter.clear();
@@ -73,7 +75,7 @@ public class ImportHistoryView extends VerticalLayout {
         });
         apply.addThemeName("primary");
 
-        HorizontalLayout filters = new HorizontalLayout(entityFilter, statusFilter, dateFilter, fileFilter, apply, reset);
+        HorizontalLayout filters = new HorizontalLayout(entityFilter, statusFilter, dateFilter, fileFilter, apply, refresh, reset);
         filters.setAlignItems(Alignment.END);
         add(UiComponents.card(new H3("Filters"), filters));
     }
@@ -161,6 +163,8 @@ public class ImportHistoryView extends VerticalLayout {
         configureRunDownload(null);
         batchGrid.setItems(historyService.recentBatches());
         runScopeSummary.setText("Showing " + runs.size() + " filtered runs across all batches and standalone imports.");
+        boolean hasLive = runs.stream().anyMatch(run -> run.getStatus() == ImportRunStatus.QUEUED || run.getStatus() == ImportRunStatus.RUNNING);
+        getUI().ifPresent(ui -> ui.setPollInterval(hasLive ? 5000 : -1));
     }
 
     private void configureRunDownload(ImportRunEntity selected) {

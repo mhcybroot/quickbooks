@@ -109,7 +109,9 @@ public class ExpenseImportService {
         run.setCompany(connectionService.requireCurrentCompany());
         run.setExportCsv(null);
         applyExecutionOptions(run, options);
+        run = importRunRepository.save(run);
 
+        int processedSinceFlush = 0;
         for (ExpenseRowValidationResult validation : preview.validations()) {
             ImportRowResultEntity rowEntity = buildRow(run, validation);
             if (mode == ImportExecutionMode.IMPORT_READY_ONLY && validation.status() != ImportRowStatus.READY) {
@@ -117,6 +119,14 @@ public class ExpenseImportService {
                 rowEntity.setMessage("Skipped because row is not READY.");
                 run.getRowResults().add(rowEntity);
                 skipped++;
+                processedSinceFlush++;
+                if (processedSinceFlush >= 25) {
+                    run.setAttemptedRows(attempted);
+                    run.setSkippedRows(skipped);
+                    run.setImportedRows(imported);
+                    importRunRepository.save(run);
+                    processedSinceFlush = 0;
+                }
                 continue;
             }
             try {
@@ -136,6 +146,14 @@ public class ExpenseImportService {
                 failed++;
             }
             run.getRowResults().add(rowEntity);
+            processedSinceFlush++;
+            if (processedSinceFlush >= 25) {
+                run.setAttemptedRows(attempted);
+                run.setSkippedRows(skipped);
+                run.setImportedRows(imported);
+                importRunRepository.save(run);
+                processedSinceFlush = 0;
+            }
         }
         run.setTotalRows(preview.rows().size());
         run.setValidRows((int) readyRows);

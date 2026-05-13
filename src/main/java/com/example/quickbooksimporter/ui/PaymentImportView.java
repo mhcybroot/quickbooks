@@ -4,9 +4,9 @@ import com.example.quickbooksimporter.domain.ImportRowStatus;
 import com.example.quickbooksimporter.domain.NormalizedPaymentField;
 import com.example.quickbooksimporter.domain.PaymentImportPreview;
 import com.example.quickbooksimporter.domain.PaymentImportPreviewRow;
-import com.example.quickbooksimporter.service.ImportExecutionResult;
 import com.example.quickbooksimporter.service.ImportExecutionMode;
 import com.example.quickbooksimporter.service.ImportExecutionOptions;
+import com.example.quickbooksimporter.service.ImportBackgroundService;
 import com.example.quickbooksimporter.service.InvoiceCsvParser;
 import com.example.quickbooksimporter.service.MappingProfileSummary;
 import com.example.quickbooksimporter.service.ParsedCsvDocument;
@@ -46,6 +46,7 @@ public class PaymentImportView extends VerticalLayout {
     private final InvoiceCsvParser parser;
     private final PaymentMappingProfileService mappingProfileService;
     private final PaymentImportService paymentImportService;
+    private final ImportBackgroundService backgroundService;
 
     private final MemoryBuffer uploadBuffer = new MemoryBuffer();
     private final Upload upload = new Upload(uploadBuffer);
@@ -66,10 +67,12 @@ public class PaymentImportView extends VerticalLayout {
 
     public PaymentImportView(InvoiceCsvParser parser,
                              PaymentMappingProfileService mappingProfileService,
-                             PaymentImportService paymentImportService) {
+                             PaymentImportService paymentImportService,
+                             ImportBackgroundService backgroundService) {
         this.parser = parser;
         this.mappingProfileService = mappingProfileService;
         this.paymentImportService = paymentImportService;
+        this.backgroundService = backgroundService;
         addClassName("corp-page");
         setSizeFull();
         add(new H2("Receive Payment Import"),
@@ -200,17 +203,15 @@ public class PaymentImportView extends VerticalLayout {
             notifyWarning("Run preview first.");
             return;
         }
-        ImportExecutionResult result = paymentImportService.execute(
+        backgroundService.enqueue(
+                com.example.quickbooksimporter.domain.EntityType.PAYMENT,
                 uploadedFileName,
                 savedProfiles.getOptionalValue().map(MappingProfileSummary::name).orElse(profileName.getValue()),
                 currentPreview,
                 new ImportExecutionOptions(null, null, null, mode));
-        if (result.success()) {
-            notifySuccess(result.message());
-        } else {
-            notifyWarning(result.message());
-        }
-        summary.setText(result.message());
+        String message = "Background import started. Open Import History to track live progress.";
+        notifySuccess(message);
+        summary.setText(message);
     }
 
     private Map<NormalizedPaymentField, String> currentMapping() {

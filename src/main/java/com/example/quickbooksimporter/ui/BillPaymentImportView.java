@@ -2,12 +2,13 @@ package com.example.quickbooksimporter.ui;
 
 import com.example.quickbooksimporter.domain.BillPaymentImportPreview;
 import com.example.quickbooksimporter.domain.BillPaymentImportPreviewRow;
+import com.example.quickbooksimporter.domain.EntityType;
 import com.example.quickbooksimporter.domain.ImportRowStatus;
 import com.example.quickbooksimporter.domain.NormalizedBillPaymentField;
 import com.example.quickbooksimporter.service.BillPaymentImportService;
 import com.example.quickbooksimporter.service.BillPaymentMappingProfileService;
 import com.example.quickbooksimporter.service.DateFormatOption;
-import com.example.quickbooksimporter.service.ImportExecutionResult;
+import com.example.quickbooksimporter.service.ImportBackgroundService;
 import com.example.quickbooksimporter.service.ImportExecutionMode;
 import com.example.quickbooksimporter.service.ImportExecutionOptions;
 import com.example.quickbooksimporter.service.InvoiceCsvParser;
@@ -45,6 +46,7 @@ public class BillPaymentImportView extends VerticalLayout {
     private final InvoiceCsvParser parser;
     private final BillPaymentMappingProfileService mappingProfileService;
     private final BillPaymentImportService importService;
+    private final ImportBackgroundService backgroundService;
     private final MemoryBuffer uploadBuffer = new MemoryBuffer();
     private final Upload upload = new Upload(uploadBuffer);
     private final ComboBox<MappingProfileSummary> savedProfiles = new ComboBox<>("Saved Bill Payment Mapping Profiles");
@@ -60,10 +62,14 @@ public class BillPaymentImportView extends VerticalLayout {
     private List<String> currentHeaders = List.of();
     private BillPaymentImportPreview currentPreview;
 
-    public BillPaymentImportView(InvoiceCsvParser parser, BillPaymentMappingProfileService mappingProfileService, BillPaymentImportService importService) {
+    public BillPaymentImportView(InvoiceCsvParser parser,
+                                 BillPaymentMappingProfileService mappingProfileService,
+                                 BillPaymentImportService importService,
+                                 ImportBackgroundService backgroundService) {
         this.parser = parser;
         this.mappingProfileService = mappingProfileService;
         this.importService = importService;
+        this.backgroundService = backgroundService;
         addClassName("corp-page");
         setSizeFull();
         add(new H2("Bill Payment Import"), new Paragraph("Upload, map, validate, review, and import bill payments into QuickBooks."),
@@ -149,12 +155,15 @@ public class BillPaymentImportView extends VerticalLayout {
     }
     private void importPreview(ImportExecutionMode mode) {
         if (currentPreview == null) { notifyWarning("Run preview first."); return; }
-        ImportExecutionResult result = importService.execute(uploadedFileName,
+        backgroundService.enqueue(
+                EntityType.BILL_PAYMENT,
+                uploadedFileName,
                 savedProfiles.getOptionalValue().map(MappingProfileSummary::name).orElse(profileName.getValue()),
                 currentPreview,
                 new ImportExecutionOptions(null, null, null, mode));
-        if (result.success()) notifySuccess(result.message()); else notifyWarning(result.message());
-        summary.setText(result.message());
+        String message = "Background import started. Open Import History to track live progress.";
+        notifySuccess(message);
+        summary.setText(message);
     }
     private Map<NormalizedBillPaymentField, String> currentMapping() {
         Map<NormalizedBillPaymentField, String> m = new EnumMap<>(NormalizedBillPaymentField.class);

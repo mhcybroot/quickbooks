@@ -105,6 +105,8 @@ public class BillImportService {
         run.setCompany(connectionService.requireCurrentCompany());
         run.setExportCsv(null);
         applyExecutionOptions(run, options);
+        run = importRunRepository.save(run);
+        int processedSinceFlush = 0;
         for (BillRowValidationResult validation : preview.validations()) {
             ImportRowResultEntity row = buildRow(run, validation);
             if (mode == ImportExecutionMode.IMPORT_READY_ONLY && validation.status() != ImportRowStatus.READY) {
@@ -112,6 +114,14 @@ public class BillImportService {
                 row.setMessage("Skipped because row is not READY.");
                 run.getRowResults().add(row);
                 skipped++;
+                processedSinceFlush++;
+                if (processedSinceFlush >= 25) {
+                    run.setAttemptedRows(attempted);
+                    run.setSkippedRows(skipped);
+                    run.setImportedRows(imported);
+                    importRunRepository.save(run);
+                    processedSinceFlush = 0;
+                }
                 continue;
             }
             try {
@@ -134,6 +144,14 @@ public class BillImportService {
                 failed++;
             }
             run.getRowResults().add(row);
+            processedSinceFlush++;
+            if (processedSinceFlush >= 25) {
+                run.setAttemptedRows(attempted);
+                run.setSkippedRows(skipped);
+                run.setImportedRows(imported);
+                importRunRepository.save(run);
+                processedSinceFlush = 0;
+            }
         }
         run.setTotalRows(preview.rows().size());
         run.setValidRows((int) readyRows);

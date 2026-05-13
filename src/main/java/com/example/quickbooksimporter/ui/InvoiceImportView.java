@@ -6,7 +6,7 @@ import com.example.quickbooksimporter.domain.ImportRowStatus;
 import com.example.quickbooksimporter.domain.NormalizedInvoiceField;
 import com.example.quickbooksimporter.service.CsvMappingProfileService;
 import com.example.quickbooksimporter.service.DateFormatOption;
-import com.example.quickbooksimporter.service.ImportExecutionResult;
+import com.example.quickbooksimporter.service.ImportBackgroundService;
 import com.example.quickbooksimporter.service.ImportExecutionMode;
 import com.example.quickbooksimporter.service.ImportExecutionOptions;
 import com.example.quickbooksimporter.service.ImportWorkflowFacade;
@@ -53,6 +53,7 @@ public class InvoiceImportView extends VerticalLayout {
     private final InvoiceImportService invoiceImportService;
     private final ImportWorkflowFacade workflowFacade;
     private final InvoiceGroupingPreferenceService invoiceGroupingPreferenceService;
+    private final ImportBackgroundService backgroundService;
 
     private final MemoryBuffer uploadBuffer = new MemoryBuffer();
     private final Upload upload = new Upload(uploadBuffer);
@@ -84,12 +85,14 @@ public class InvoiceImportView extends VerticalLayout {
                              CsvMappingProfileService mappingProfileService,
                              InvoiceImportService invoiceImportService,
                              ImportWorkflowFacade workflowFacade,
-                             InvoiceGroupingPreferenceService invoiceGroupingPreferenceService) {
+                             InvoiceGroupingPreferenceService invoiceGroupingPreferenceService,
+                             ImportBackgroundService backgroundService) {
         this.parser = parser;
         this.mappingProfileService = mappingProfileService;
         this.invoiceImportService = invoiceImportService;
         this.workflowFacade = workflowFacade;
         this.invoiceGroupingPreferenceService = invoiceGroupingPreferenceService;
+        this.backgroundService = backgroundService;
         this.invoiceGroupingEnabled = invoiceGroupingPreferenceService.isGroupingEnabled();
 
         setSizeFull();
@@ -253,17 +256,15 @@ public class InvoiceImportView extends VerticalLayout {
             notifyWarning("Run preview first.");
             return;
         }
-        ImportExecutionResult result = invoiceImportService.execute(
+        backgroundService.enqueue(
+                com.example.quickbooksimporter.domain.EntityType.INVOICE,
                 uploadedFileName,
                 savedProfiles.getOptionalValue().map(MappingProfileSummary::name).orElse(profileName.getValue()),
                 currentPreview,
                 new ImportExecutionOptions(null, null, null, mode));
-        if (result.success()) {
-            notifySuccess(result.message());
-        } else {
-            notifyWarning(result.message());
-        }
-        summary.setText(result.message());
+        String message = "Background import started. Open Import History to track live progress.";
+        notifySuccess(message);
+        summary.setText(message);
     }
 
     private Map<NormalizedInvoiceField, String> currentMapping() {

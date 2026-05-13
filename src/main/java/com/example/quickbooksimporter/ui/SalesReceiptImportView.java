@@ -4,9 +4,9 @@ import com.example.quickbooksimporter.domain.ImportRowStatus;
 import com.example.quickbooksimporter.domain.NormalizedSalesReceiptField;
 import com.example.quickbooksimporter.domain.SalesReceiptImportPreview;
 import com.example.quickbooksimporter.domain.SalesReceiptImportPreviewRow;
-import com.example.quickbooksimporter.service.ImportExecutionResult;
 import com.example.quickbooksimporter.service.ImportExecutionMode;
 import com.example.quickbooksimporter.service.ImportExecutionOptions;
+import com.example.quickbooksimporter.service.ImportBackgroundService;
 import com.example.quickbooksimporter.service.InvoiceCsvParser;
 import com.example.quickbooksimporter.service.MappingProfileSummary;
 import com.example.quickbooksimporter.service.ParsedCsvDocument;
@@ -46,6 +46,7 @@ public class SalesReceiptImportView extends VerticalLayout {
     private final InvoiceCsvParser parser;
     private final SalesReceiptMappingProfileService mappingProfileService;
     private final SalesReceiptImportService importService;
+    private final ImportBackgroundService backgroundService;
 
     private final MemoryBuffer uploadBuffer = new MemoryBuffer();
     private final Upload upload = new Upload(uploadBuffer);
@@ -66,10 +67,12 @@ public class SalesReceiptImportView extends VerticalLayout {
 
     public SalesReceiptImportView(InvoiceCsvParser parser,
                                   SalesReceiptMappingProfileService mappingProfileService,
-                                  SalesReceiptImportService importService) {
+                                  SalesReceiptImportService importService,
+                                  ImportBackgroundService backgroundService) {
         this.parser = parser;
         this.mappingProfileService = mappingProfileService;
         this.importService = importService;
+        this.backgroundService = backgroundService;
 
         addClassName("corp-page");
         setSizeFull();
@@ -196,17 +199,15 @@ public class SalesReceiptImportView extends VerticalLayout {
             notifyWarning("Run preview first.");
             return;
         }
-        ImportExecutionResult result = importService.execute(
+        backgroundService.enqueue(
+                com.example.quickbooksimporter.domain.EntityType.SALES_RECEIPT,
                 uploadedFileName,
                 savedProfiles.getOptionalValue().map(MappingProfileSummary::name).orElse(profileName.getValue()),
                 currentPreview,
                 new ImportExecutionOptions(null, null, null, mode));
-        if (result.success()) {
-            notifySuccess(result.message());
-        } else {
-            notifyWarning(result.message());
-        }
-        summary.setText(result.message());
+        String message = "Background import started. Open Import History to track live progress.";
+        notifySuccess(message);
+        summary.setText(message);
     }
 
     private Map<NormalizedSalesReceiptField, String> currentMapping() {
