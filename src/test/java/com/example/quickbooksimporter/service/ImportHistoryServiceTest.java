@@ -31,11 +31,15 @@ class ImportHistoryServiceTest {
     @Mock
     private ImportBatchRepository importBatchRepository;
 
+    @Mock
+    private CurrentCompanyService currentCompanyService;
+
     private ImportHistoryService service;
 
     @BeforeEach
     void setUp() {
-        service = new ImportHistoryService(importRunRepository, importBatchRepository);
+        service = new ImportHistoryService(importRunRepository, importBatchRepository, currentCompanyService);
+        when(currentCompanyService.requireCurrentCompanyId()).thenReturn(1L);
     }
 
     @Test
@@ -45,7 +49,7 @@ class ImportHistoryServiceTest {
         ImportRunEntity payment = run("payments.csv", EntityType.PAYMENT, ImportRunStatus.PARTIAL_FAILURE,
                 LocalDate.of(2026, 5, 5).atStartOfDay().toInstant(ZoneOffset.UTC));
 
-        when(importRunRepository.findTop100ByOrderByCreatedAtDesc()).thenReturn(List.of(invoice, payment));
+        when(importRunRepository.findTop100ByCompanyIdOrderByCreatedAtDesc(1L)).thenReturn(List.of(invoice, payment));
 
         List<ImportRunEntity> filtered = service.filterRuns(
                 EntityType.INVOICE,

@@ -37,11 +37,15 @@ class ImportBatchServiceTest {
     @Mock
     private ImportWorkflowFacade workflowFacade;
 
+    @Mock
+    private CurrentCompanyService currentCompanyService;
+
     private ImportBatchService service;
 
     @BeforeEach
     void setUp() {
-        service = new ImportBatchService(importBatchRepository, importRunRepository, workflowFacade);
+        service = new ImportBatchService(importBatchRepository, importRunRepository, workflowFacade, currentCompanyService);
+        when(currentCompanyService.requireCurrentCompanyId()).thenReturn(1L);
     }
 
     @Test
@@ -50,7 +54,7 @@ class ImportBatchServiceTest {
         ImportPreviewSummary summary = new ImportPreviewSummary(
                 EntityType.PAYMENT, "payments.csv", List.of(), 1, 1, 0, 0, null, null, List.of(), preview);
 
-        when(importRunRepository.findTop100ByOrderByCreatedAtDesc()).thenReturn(List.of());
+        when(importRunRepository.findTop100ByCompanyIdOrderByCreatedAtDesc(1L)).thenReturn(List.of());
         when(workflowFacade.producedIdentifiers(EntityType.PAYMENT, preview)).thenReturn(Set.of());
         when(workflowFacade.requiredParentIdentifiers(EntityType.PAYMENT, preview)).thenReturn(Set.of("INV-100"));
 
@@ -76,7 +80,7 @@ class ImportBatchServiceTest {
         ImportPreviewSummary paymentSummary = new ImportPreviewSummary(
                 EntityType.PAYMENT, "payment.csv", List.of(), 2, 2, 0, 0, null, null, List.of(), paymentPreview);
 
-        when(importBatchRepository.findById(7L)).thenReturn(Optional.of(batch));
+        when(importBatchRepository.findByIdAndCompanyId(7L, 1L)).thenReturn(Optional.of(batch));
         when(importBatchRepository.save(any(ImportBatchEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(workflowFacade.execute(eq(EntityType.INVOICE), eq("invoice.csv"), any(), eq(invoicePreview), any()))
                 .thenReturn(new ImportExecutionResult(run("invoice.csv", EntityType.INVOICE), true, "ok"));

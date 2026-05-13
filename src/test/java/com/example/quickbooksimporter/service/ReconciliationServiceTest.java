@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 import com.example.quickbooksimporter.domain.ParsedCsvRow;
+import com.example.quickbooksimporter.persistence.CompanyEntity;
 import com.example.quickbooksimporter.persistence.QboConnectionEntity;
 import com.example.quickbooksimporter.persistence.ReconciliationSessionEntity;
 import com.example.quickbooksimporter.repository.ReconciliationSessionRepository;
@@ -41,17 +42,23 @@ class ReconciliationServiceTest {
     @Mock
     private ReconciliationSessionRepository sessionRepository;
 
+    @Mock
+    private CurrentCompanyService currentCompanyService;
+
     private ReconciliationService service;
 
     @BeforeEach
     void setUp() {
-        service = new ReconciliationService(parser, connectionService, gateway, sessionRepository);
+        service = new ReconciliationService(parser, connectionService, gateway, sessionRepository, currentCompanyService);
+        when(currentCompanyService.requireCurrentCompanyId()).thenReturn(1L);
         QboConnectionEntity connection = new QboConnectionEntity();
         connection.setRealmId("realm-1");
         connection.setConnectedAt(Instant.now());
         connection.setUpdatedAt(Instant.now());
         connection.setExpiresAt(Instant.now().plusSeconds(3600));
         when(connectionService.getActiveConnection()).thenReturn(connection);
+        CompanyEntity company = new CompanyEntity();
+        when(currentCompanyService.requireCurrentCompany()).thenReturn(company);
     }
 
     @Test
@@ -163,7 +170,7 @@ class ReconciliationServiceTest {
         row.setBatchMatch(false);
         session.getRows().add(row);
 
-        when(sessionRepository.findById(21L)).thenReturn(Optional.of(session));
+        when(sessionRepository.findByIdAndCompanyId(21L, 1L)).thenReturn(Optional.of(session));
         when(gateway.markTransactionReconciled(eq("realm-1"), any(), any()))
                 .thenReturn(new QuickBooksReconcileMarkResult(true, "ok", "tid-1"));
         when(sessionRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
