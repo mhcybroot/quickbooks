@@ -39,11 +39,11 @@ class ImportHistoryServiceTest {
     @BeforeEach
     void setUp() {
         service = new ImportHistoryService(importRunRepository, importBatchRepository, currentCompanyService);
-        when(currentCompanyService.requireCurrentCompanyId()).thenReturn(1L);
     }
 
     @Test
     void filterRunsAppliesEntityStatusDateAndFileSearch() {
+        when(currentCompanyService.requireCurrentCompanyId()).thenReturn(1L);
         ImportRunEntity invoice = run("invoice-may.csv", EntityType.INVOICE, ImportRunStatus.IMPORTED,
                 LocalDate.of(2026, 5, 7).atStartOfDay().toInstant(ZoneOffset.UTC));
         ImportRunEntity payment = run("payments.csv", EntityType.PAYMENT, ImportRunStatus.PARTIAL_FAILURE,
@@ -86,11 +86,56 @@ class ImportHistoryServiceTest {
         String csv = service.buildRunExportCsv(run);
 
         assertTrue(csv.contains("runId,entityType,status,sourceFileName"));
+        assertTrue(csv.contains("userCsv.a,userCsv.b,rawData,normalizedData"));
         assertTrue(csv.contains("invoice.csv"));
         assertTrue(csv.contains("PARTIAL_FAILURE"));
         assertTrue(csv.contains("INV-1002"));
         assertTrue(csv.contains("\"Bad amount, line 2\""));
         assertTrue(csv.contains("\"{\"\"a\"\":1,"));
+    }
+
+    @Test
+    void buildRunExportCsvAddsUnionOfDynamicUserCsvColumnsInDeterministicOrder() {
+        ImportRunEntity run = run("payments.csv", EntityType.PAYMENT, ImportRunStatus.PARTIAL_FAILURE, Instant.now());
+        run.setTotalRows(2);
+
+        ImportRowResultEntity row3 = new ImportRowResultEntity();
+        row3.setRowNumber(3);
+        row3.setSourceIdentifier("P-3");
+        row3.setStatus(ImportRowStatus.IMPORTED);
+        row3.setRawData("{\"B\":\"2\",\"C\":\"3\"}");
+        run.getRowResults().add(row3);
+
+        ImportRowResultEntity row2 = new ImportRowResultEntity();
+        row2.setRowNumber(2);
+        row2.setSourceIdentifier("P-2");
+        row2.setStatus(ImportRowStatus.IMPORTED);
+        row2.setRawData("{\"A\":\"1\",\"B\":\"x\"}");
+        run.getRowResults().add(row2);
+
+        String csv = service.buildRunExportCsv(run);
+        String[] lines = csv.split("\\R");
+
+        assertTrue(lines[0].contains("userCsv.A,userCsv.B,userCsv.C,rawData,normalizedData"));
+        assertTrue(lines[1].contains(",1,x,,\"{\"\"A\"\":\"\"1\"\",\"\"B\"\":\"\"x\"\"}\""));
+        assertTrue(lines[2].contains(",,2,3,\"{\"\"B\"\":\"\"2\"\",\"\"C\"\":\"\"3\"\"}\""));
+    }
+
+    @Test
+    void buildRunExportCsvHandlesInvalidRawDataWithoutFailing() {
+        ImportRunEntity run = run("payments.csv", EntityType.PAYMENT, ImportRunStatus.PARTIAL_FAILURE, Instant.now());
+        run.setTotalRows(1);
+        ImportRowResultEntity row = new ImportRowResultEntity();
+        row.setRowNumber(1);
+        row.setStatus(ImportRowStatus.INVALID);
+        row.setRawData("{invalid-json");
+        run.getRowResults().add(row);
+
+        String csv = service.buildRunExportCsv(run);
+        String[] lines = csv.split("\\R");
+
+        assertTrue(lines[0].contains("rawData,normalizedData"));
+        assertTrue(lines[1].contains("{invalid-json"));
     }
 
     @Test
