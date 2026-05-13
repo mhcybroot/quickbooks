@@ -54,6 +54,16 @@ public class ImportHistoryService {
         return importRunRepository.findByIdAndCompanyId(runId, currentCompanyService.requireCurrentCompanyId());
     }
 
+    public Optional<ImportRunEntity> findLatestRunForFile(EntityType entityType, String sourceFileName) {
+        if (entityType == null || sourceFileName == null || sourceFileName.isBlank()) {
+            return Optional.empty();
+        }
+        return importRunRepository.findTopByEntityTypeAndSourceFileNameAndCompanyIdOrderByCreatedAtDesc(
+                entityType,
+                sourceFileName,
+                currentCompanyService.requireCurrentCompanyId());
+    }
+
     public String buildRunExportCsv(ImportRunEntity run) {
         if (run == null) {
             throw new IllegalArgumentException("Import run is required");

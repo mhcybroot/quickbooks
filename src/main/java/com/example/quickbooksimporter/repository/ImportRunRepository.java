@@ -19,6 +19,7 @@ public interface ImportRunRepository extends JpaRepository<ImportRunEntity, Long
 
     Optional<ImportRunEntity> findTopByEntityTypeAndMappingProfileNameIsNotNullOrderByCreatedAtDesc(EntityType entityType);
     Optional<ImportRunEntity> findTopByEntityTypeAndMappingProfileNameIsNotNullAndCompanyIdOrderByCreatedAtDesc(EntityType entityType, Long companyId);
+    Optional<ImportRunEntity> findTopByEntityTypeAndSourceFileNameAndCompanyIdOrderByCreatedAtDesc(EntityType entityType, String sourceFileName, Long companyId);
 
     Optional<ImportRunEntity> findByIdAndCompanyId(Long runId, Long companyId);
 }

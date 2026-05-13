@@ -201,7 +201,7 @@ public class BatchImportView extends VerticalLayout {
     private void configureActions() {
         Button validateAll = new Button("Validate All", event -> validateAll());
         Button runAll = new Button("Run All", event -> runAll());
-        Button openHistory = new Button("Open History", event -> UI.getCurrent().navigate("history"));
+        Button openHistory = new Button("Open History", event -> UI.getCurrent().navigate(ImportHistoryView.class));
         Button clear = new Button("Clear Draft", event -> clearDraft());
         validateAll.addThemeName("primary");
         runAll.addThemeName("primary");

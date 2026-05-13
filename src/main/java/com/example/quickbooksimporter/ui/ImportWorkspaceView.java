@@ -58,7 +58,7 @@ public class ImportWorkspaceView extends VerticalLayout {
         Button openSingle = new Button("Open Single Import", event ->
                 UI.getCurrent().navigate(ImportRoutes.routeFor(importType.getValue())));
         Button openBatch = new Button("Open Batch Workspace", event -> UI.getCurrent().navigate("batch"));
-        Button openHistory = new Button("Open History", event -> UI.getCurrent().navigate("history"));
+        Button openHistory = new Button("Open History", event -> UI.getCurrent().navigate(ImportHistoryView.class));
         openSingle.addThemeName("primary");
         openBatch.addThemeName("primary");
 

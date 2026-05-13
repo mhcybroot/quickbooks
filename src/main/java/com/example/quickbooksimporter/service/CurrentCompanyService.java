@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 public class CurrentCompanyService {
 
     private static final String SESSION_KEY = "selected.company.id";
+    private static final ThreadLocal<Long> ASYNC_COMPANY_ID = new ThreadLocal<>();
 
     private final CurrentUserService currentUserService;
     private final CompanyRepository companyRepository;
@@ -41,6 +42,10 @@ public class CurrentCompanyService {
     }
 
     public Long requireCurrentCompanyId() {
+        Long asyncCompanyId = ASYNC_COMPANY_ID.get();
+        if (asyncCompanyId != null) {
+            return asyncCompanyId;
+        }
         Optional<Long> selected = selectedCompanyIdFromSession();
         List<CompanyEntity> companies = availableCompanies();
         if (companies.isEmpty()) {
@@ -91,5 +96,23 @@ public class CurrentCompanyService {
             return Optional.of(number.longValue());
         }
         return Optional.empty();
+    }
+
+    public void runWithCompanyContext(Long companyId, Runnable runnable) {
+        if (companyId == null) {
+            runnable.run();
+            return;
+        }
+        Long previous = ASYNC_COMPANY_ID.get();
+        ASYNC_COMPANY_ID.set(companyId);
+        try {
+            runnable.run();
+        } finally {
+            if (previous == null) {
+                ASYNC_COMPANY_ID.remove();
+            } else {
+                ASYNC_COMPANY_ID.set(previous);
+            }
+        }
     }
 }

@@ -152,15 +152,26 @@ public class ImportHistoryView extends VerticalLayout {
     }
 
     private void refreshRuns() {
+        Long selectedRunId = runGrid.asSingleSelect().getValue() == null ? null : runGrid.asSingleSelect().getValue().getId();
         List<ImportRunEntity> runs = historyService.filterRuns(
                 entityFilter.getValue(),
                 statusFilter.getValue(),
                 dateFilter.getValue(),
                 fileFilter.getValue());
         runGrid.setItems(runs);
-        rowGrid.setItems(List.of());
-        runGrid.deselectAll();
-        configureRunDownload(null);
+        ImportRunEntity selectedRun = selectedRunId == null ? null : runs.stream()
+                .filter(run -> selectedRunId.equals(run.getId()))
+                .findFirst()
+                .orElse(null);
+        if (selectedRun == null) {
+            rowGrid.setItems(List.of());
+            runGrid.deselectAll();
+            configureRunDownload(null);
+        } else {
+            runGrid.asSingleSelect().setValue(selectedRun);
+            rowGrid.setItems(selectedRun.getRowResults() == null ? List.of() : selectedRun.getRowResults());
+            configureRunDownload(selectedRun);
+        }
         batchGrid.setItems(historyService.recentBatches());
         runScopeSummary.setText("Showing " + runs.size() + " filtered runs across all batches and standalone imports.");
         boolean hasLive = runs.stream().anyMatch(run -> run.getStatus() == ImportRunStatus.QUEUED || run.getStatus() == ImportRunStatus.RUNNING);

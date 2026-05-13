@@ -4,12 +4,14 @@ import com.example.quickbooksimporter.domain.BillImportPreview;
 import com.example.quickbooksimporter.domain.BillImportPreviewRow;
 import com.example.quickbooksimporter.domain.EntityType;
 import com.example.quickbooksimporter.domain.ImportRowStatus;
+import com.example.quickbooksimporter.domain.ImportRunStatus;
 import com.example.quickbooksimporter.domain.NormalizedBillField;
 import com.example.quickbooksimporter.service.BillImportService;
 import com.example.quickbooksimporter.service.BillMappingProfileService;
 import com.example.quickbooksimporter.service.ImportBackgroundService;
 import com.example.quickbooksimporter.service.ImportExecutionMode;
 import com.example.quickbooksimporter.service.ImportExecutionOptions;
+import com.example.quickbooksimporter.service.ImportHistoryService;
 import com.example.quickbooksimporter.service.DateFormatOption;
 import com.example.quickbooksimporter.service.InvoiceCsvParser;
 import com.example.quickbooksimporter.service.MappingProfileSummary;
@@ -47,6 +49,7 @@ public class BillImportView extends VerticalLayout {
     private final BillMappingProfileService mappingProfileService;
     private final BillImportService importService;
     private final ImportBackgroundService backgroundService;
+    private final ImportHistoryService importHistoryService;
     private final MemoryBuffer uploadBuffer = new MemoryBuffer();
     private final Upload upload = new Upload(uploadBuffer);
     private final ComboBox<MappingProfileSummary> savedProfiles = new ComboBox<>("Saved Bill Mapping Profiles");
@@ -59,19 +62,23 @@ public class BillImportView extends VerticalLayout {
     private final Map<NormalizedBillField, ComboBox<String>> fieldSelectors = new EnumMap<>(NormalizedBillField.class);
     private byte[] uploadedBytes;
     private String uploadedFileName;
+    private String trackingFileName;
     private List<String> currentHeaders = List.of();
     private BillImportPreview currentPreview;
 
     public BillImportView(InvoiceCsvParser parser,
                           BillMappingProfileService mappingProfileService,
                           BillImportService importService,
-                          ImportBackgroundService backgroundService) {
+                          ImportBackgroundService backgroundService,
+                          ImportHistoryService importHistoryService) {
         this.parser = parser;
         this.mappingProfileService = mappingProfileService;
         this.importService = importService;
         this.backgroundService = backgroundService;
+        this.importHistoryService = importHistoryService;
         addClassName("corp-page");
         setSizeFull();
+        getUI().ifPresent(ui -> ui.addPollListener(event -> refreshBackgroundProgress()));
         add(new H2("Bill Import"), new Paragraph("Upload, map, validate, review, and import AP bills into QuickBooks."),
                 UiComponents.importStepper("Upload"));
         configureUpload(); configureProfiles(); configureMappingForm(); configurePreviewGrid(); configureActions();
@@ -130,7 +137,7 @@ public class BillImportView extends VerticalLayout {
         Button save = new Button("Save Mapping Profile", e -> saveProfile());
         Button run = new Button("Import Bills", e -> importPreview(ImportExecutionMode.STRICT_ALL_ROWS));
         Button runReadyOnly = new Button("Import Ready Rows Only", e -> importPreview(ImportExecutionMode.IMPORT_READY_ONLY));
-        Button historyButton = new Button("Open History", e -> UI.getCurrent().navigate("history"));
+        Button historyButton = new Button("Open History", e -> UI.getCurrent().navigate(ImportHistoryView.class));
         preview.addThemeName("primary"); run.addThemeName("primary");
         HorizontalLayout actions = new HorizontalLayout(preview, save, run, runReadyOnly, historyButton); actions.addClassName("corp-action-bar");
         add(UiComponents.card(UiComponents.sectionTitle("Stage 5: Execute"), actions));
@@ -155,7 +162,7 @@ public class BillImportView extends VerticalLayout {
     }
     private void importPreview(ImportExecutionMode mode) {
         if (currentPreview == null) { notifyWarning("Run preview first."); return; }
-        backgroundService.enqueue(
+        backgroundService.enqueueForCurrentCompany(
                 EntityType.BILL,
                 uploadedFileName,
                 savedProfiles.getOptionalValue().map(MappingProfileSummary::name).orElse(profileName.getValue()),
@@ -164,6 +171,9 @@ public class BillImportView extends VerticalLayout {
         String message = "Background import started. Open Import History to track live progress.";
         notifySuccess(message);
         summary.setText(message);
+        trackingFileName = uploadedFileName;
+        getUI().ifPresent(ui -> ui.setPollInterval(3000));
+        refreshBackgroundProgress();
     }
     private Map<NormalizedBillField, String> currentMapping() {
         Map<NormalizedBillField, String> m = new EnumMap<>(NormalizedBillField.class);
@@ -176,5 +186,21 @@ public class BillImportView extends VerticalLayout {
         if (currentPreview == null) { previewGrid.setItems(List.of()); return; }
         ImportRowStatus filter = previewFilter.getValue();
         previewGrid.setItems(currentPreview.rows().stream().filter(r -> filter == null || r.status() == filter).toList());
+    }
+
+    private void refreshBackgroundProgress() {
+        if (trackingFileName == null || trackingFileName.isBlank()) {
+            return;
+        }
+        importHistoryService.findLatestRunForFile(EntityType.BILL, trackingFileName)
+                .ifPresent(run -> {
+                    summary.setText("Run #" + run.getId() + " is " + run.getStatus()
+                            + " | attempted=" + run.getAttemptedRows()
+                            + ", imported=" + run.getImportedRows()
+                            + ", skipped=" + run.getSkippedRows() + ".");
+                    if (run.getStatus() != ImportRunStatus.QUEUED && run.getStatus() != ImportRunStatus.RUNNING) {
+                        getUI().ifPresent(ui -> ui.setPollInterval(-1));
+                    }
+                });
     }
 }

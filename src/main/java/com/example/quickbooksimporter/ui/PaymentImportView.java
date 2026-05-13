@@ -1,12 +1,14 @@
 package com.example.quickbooksimporter.ui;
 
 import com.example.quickbooksimporter.domain.ImportRowStatus;
+import com.example.quickbooksimporter.domain.ImportRunStatus;
 import com.example.quickbooksimporter.domain.NormalizedPaymentField;
 import com.example.quickbooksimporter.domain.PaymentImportPreview;
 import com.example.quickbooksimporter.domain.PaymentImportPreviewRow;
 import com.example.quickbooksimporter.service.ImportExecutionMode;
 import com.example.quickbooksimporter.service.ImportExecutionOptions;
 import com.example.quickbooksimporter.service.ImportBackgroundService;
+import com.example.quickbooksimporter.service.ImportHistoryService;
 import com.example.quickbooksimporter.service.InvoiceCsvParser;
 import com.example.quickbooksimporter.service.MappingProfileSummary;
 import com.example.quickbooksimporter.service.ParsedCsvDocument;
@@ -47,6 +49,7 @@ public class PaymentImportView extends VerticalLayout {
     private final PaymentMappingProfileService mappingProfileService;
     private final PaymentImportService paymentImportService;
     private final ImportBackgroundService backgroundService;
+    private final ImportHistoryService importHistoryService;
 
     private final MemoryBuffer uploadBuffer = new MemoryBuffer();
     private final Upload upload = new Upload(uploadBuffer);
@@ -62,19 +65,23 @@ public class PaymentImportView extends VerticalLayout {
 
     private byte[] uploadedBytes;
     private String uploadedFileName;
+    private String trackingFileName;
     private List<String> currentHeaders = List.of();
     private PaymentImportPreview currentPreview;
 
     public PaymentImportView(InvoiceCsvParser parser,
                              PaymentMappingProfileService mappingProfileService,
                              PaymentImportService paymentImportService,
-                             ImportBackgroundService backgroundService) {
+                             ImportBackgroundService backgroundService,
+                             ImportHistoryService importHistoryService) {
         this.parser = parser;
         this.mappingProfileService = mappingProfileService;
         this.paymentImportService = paymentImportService;
         this.backgroundService = backgroundService;
+        this.importHistoryService = importHistoryService;
         addClassName("corp-page");
         setSizeFull();
+        getUI().ifPresent(ui -> ui.addPollListener(event -> refreshBackgroundProgress()));
         add(new H2("Receive Payment Import"),
                 new Paragraph("Upload, map, validate, review, and import payment applications to open invoices."),
                 UiComponents.importStepper("Upload"));
@@ -160,7 +167,7 @@ public class PaymentImportView extends VerticalLayout {
         Button saveProfileButton = new Button("Save Mapping Profile", event -> saveProfile());
         Button importButton = new Button("Import Payments", event -> importPreview(ImportExecutionMode.STRICT_ALL_ROWS));
         Button importReadyOnlyButton = new Button("Import Ready Rows Only", event -> importPreview(ImportExecutionMode.IMPORT_READY_ONLY));
-        Button historyButton = new Button("Open History", event -> UI.getCurrent().navigate("history"));
+        Button historyButton = new Button("Open History", event -> UI.getCurrent().navigate(ImportHistoryView.class));
         previewButton.addThemeName("primary");
         importButton.addThemeName("primary");
         HorizontalLayout actions = new HorizontalLayout(previewButton, saveProfileButton, importButton, importReadyOnlyButton, historyButton);
@@ -203,7 +210,7 @@ public class PaymentImportView extends VerticalLayout {
             notifyWarning("Run preview first.");
             return;
         }
-        backgroundService.enqueue(
+        backgroundService.enqueueForCurrentCompany(
                 com.example.quickbooksimporter.domain.EntityType.PAYMENT,
                 uploadedFileName,
                 savedProfiles.getOptionalValue().map(MappingProfileSummary::name).orElse(profileName.getValue()),
@@ -212,6 +219,9 @@ public class PaymentImportView extends VerticalLayout {
         String message = "Background import started. Open Import History to track live progress.";
         notifySuccess(message);
         summary.setText(message);
+        trackingFileName = uploadedFileName;
+        getUI().ifPresent(ui -> ui.setPollInterval(3000));
+        refreshBackgroundProgress();
     }
 
     private Map<NormalizedPaymentField, String> currentMapping() {
@@ -239,5 +249,21 @@ public class PaymentImportView extends VerticalLayout {
         previewGrid.setItems(currentPreview.rows().stream()
                 .filter(row -> filter == null || row.status() == filter)
                 .toList());
+    }
+
+    private void refreshBackgroundProgress() {
+        if (trackingFileName == null || trackingFileName.isBlank()) {
+            return;
+        }
+        importHistoryService.findLatestRunForFile(com.example.quickbooksimporter.domain.EntityType.PAYMENT, trackingFileName)
+                .ifPresent(run -> {
+                    summary.setText("Run #" + run.getId() + " is " + run.getStatus()
+                            + " | attempted=" + run.getAttemptedRows()
+                            + ", imported=" + run.getImportedRows()
+                            + ", skipped=" + run.getSkippedRows() + ".");
+                    if (run.getStatus() != ImportRunStatus.QUEUED && run.getStatus() != ImportRunStatus.RUNNING) {
+                        getUI().ifPresent(ui -> ui.setPollInterval(-1));
+                    }
+                });
     }
 }

@@ -3,12 +3,14 @@ package com.example.quickbooksimporter.ui;
 import com.example.quickbooksimporter.domain.ImportPreview;
 import com.example.quickbooksimporter.domain.ImportPreviewRow;
 import com.example.quickbooksimporter.domain.ImportRowStatus;
+import com.example.quickbooksimporter.domain.ImportRunStatus;
 import com.example.quickbooksimporter.domain.NormalizedInvoiceField;
 import com.example.quickbooksimporter.service.CsvMappingProfileService;
 import com.example.quickbooksimporter.service.DateFormatOption;
 import com.example.quickbooksimporter.service.ImportBackgroundService;
 import com.example.quickbooksimporter.service.ImportExecutionMode;
 import com.example.quickbooksimporter.service.ImportExecutionOptions;
+import com.example.quickbooksimporter.service.ImportHistoryService;
 import com.example.quickbooksimporter.service.ImportWorkflowFacade;
 import com.example.quickbooksimporter.service.InvoiceGroupingPreferenceService;
 import com.example.quickbooksimporter.service.InvoiceCsvParser;
@@ -54,6 +56,7 @@ public class InvoiceImportView extends VerticalLayout {
     private final ImportWorkflowFacade workflowFacade;
     private final InvoiceGroupingPreferenceService invoiceGroupingPreferenceService;
     private final ImportBackgroundService backgroundService;
+    private final ImportHistoryService importHistoryService;
 
     private final MemoryBuffer uploadBuffer = new MemoryBuffer();
     private final Upload upload = new Upload(uploadBuffer);
@@ -77,6 +80,7 @@ public class InvoiceImportView extends VerticalLayout {
 
     private byte[] uploadedBytes;
     private String uploadedFileName;
+    private String trackingFileName;
     private List<String> currentHeaders = List.of();
     private ImportPreview currentPreview;
     private boolean invoiceGroupingEnabled;
@@ -86,17 +90,20 @@ public class InvoiceImportView extends VerticalLayout {
                              InvoiceImportService invoiceImportService,
                              ImportWorkflowFacade workflowFacade,
                              InvoiceGroupingPreferenceService invoiceGroupingPreferenceService,
-                             ImportBackgroundService backgroundService) {
+                             ImportBackgroundService backgroundService,
+                             ImportHistoryService importHistoryService) {
         this.parser = parser;
         this.mappingProfileService = mappingProfileService;
         this.invoiceImportService = invoiceImportService;
         this.workflowFacade = workflowFacade;
         this.invoiceGroupingPreferenceService = invoiceGroupingPreferenceService;
         this.backgroundService = backgroundService;
+        this.importHistoryService = importHistoryService;
         this.invoiceGroupingEnabled = invoiceGroupingPreferenceService.isGroupingEnabled();
 
         setSizeFull();
         addClassName("corp-page");
+        getUI().ifPresent(ui -> ui.addPollListener(event -> refreshBackgroundProgress()));
         add(new H2("Invoice Import Workspace"),
                 new Paragraph("Upload, map, validate, review, and import invoices in a faster operator workflow."),
                 UiComponents.importStepper("Upload"));
@@ -199,7 +206,7 @@ public class InvoiceImportView extends VerticalLayout {
         Button saveProfileButton = new Button("Save Mapping Profile", event -> saveProfile());
         Button importButton = new Button("Import to QuickBooks", event -> importPreview(ImportExecutionMode.STRICT_ALL_ROWS));
         Button importReadyOnlyButton = new Button("Import Ready Rows Only", event -> importPreview(ImportExecutionMode.IMPORT_READY_ONLY));
-        Button openHistoryButton = new Button("Open History", event -> UI.getCurrent().navigate("history"));
+        Button openHistoryButton = new Button("Open History", event -> UI.getCurrent().navigate(ImportHistoryView.class));
         previewButton.addThemeName("primary");
         importButton.addThemeName("primary");
         importReadyOnlyButton.addThemeName("contrast");
@@ -256,7 +263,7 @@ public class InvoiceImportView extends VerticalLayout {
             notifyWarning("Run preview first.");
             return;
         }
-        backgroundService.enqueue(
+        backgroundService.enqueueForCurrentCompany(
                 com.example.quickbooksimporter.domain.EntityType.INVOICE,
                 uploadedFileName,
                 savedProfiles.getOptionalValue().map(MappingProfileSummary::name).orElse(profileName.getValue()),
@@ -265,6 +272,9 @@ public class InvoiceImportView extends VerticalLayout {
         String message = "Background import started. Open Import History to track live progress.";
         notifySuccess(message);
         summary.setText(message);
+        trackingFileName = uploadedFileName;
+        getUI().ifPresent(ui -> ui.setPollInterval(3000));
+        refreshBackgroundProgress();
     }
 
     private Map<NormalizedInvoiceField, String> currentMapping() {
@@ -338,5 +348,21 @@ public class InvoiceImportView extends VerticalLayout {
     private void notifyWarning(String message) {
         Notification notification = Notification.show(Objects.requireNonNull(message));
         notification.addThemeVariants(NotificationVariant.LUMO_WARNING);
+    }
+
+    private void refreshBackgroundProgress() {
+        if (trackingFileName == null || trackingFileName.isBlank()) {
+            return;
+        }
+        importHistoryService.findLatestRunForFile(com.example.quickbooksimporter.domain.EntityType.INVOICE, trackingFileName)
+                .ifPresent(run -> {
+                    summary.setText("Run #" + run.getId() + " is " + run.getStatus()
+                            + " | attempted=" + run.getAttemptedRows()
+                            + ", imported=" + run.getImportedRows()
+                            + ", skipped=" + run.getSkippedRows() + ".");
+                    if (run.getStatus() != ImportRunStatus.QUEUED && run.getStatus() != ImportRunStatus.RUNNING) {
+                        getUI().ifPresent(ui -> ui.setPollInterval(-1));
+                    }
+                });
     }
 }

@@ -5,6 +5,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.security.task.DelegatingSecurityContextAsyncTaskExecutor;
 
 @Configuration
 public class ImportAsyncConfig {
@@ -19,6 +20,6 @@ public class ImportAsyncConfig {
         executor.setQueueCapacity(Math.max(10, queueCapacity));
         executor.setThreadNamePrefix("import-bg-");
         executor.initialize();
-        return executor;
+        return new DelegatingSecurityContextAsyncTaskExecutor(executor);
     }
 }
