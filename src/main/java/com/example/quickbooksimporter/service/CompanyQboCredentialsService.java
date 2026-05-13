@@ -1,6 +1,7 @@
 package com.example.quickbooksimporter.service;
 
 import com.example.quickbooksimporter.config.QuickBooksProperties;
+import com.example.quickbooksimporter.domain.QboEnvironment;
 import com.example.quickbooksimporter.persistence.CompanyEntity;
 import com.example.quickbooksimporter.persistence.CompanyQboCredentialsEntity;
 import com.example.quickbooksimporter.repository.CompanyQboCredentialsRepository;
@@ -43,15 +44,19 @@ public class CompanyQboCredentialsService {
                     entity.getClientId(),
                     cryptoService.decrypt(entity.getClientSecretEncrypted()),
                     StringUtils.defaultIfBlank(entity.getRedirectUriOverride(), properties.redirectUri()),
+                    baseUrlForEnvironment(entity.getQboEnvironment()),
                     CredentialSource.COMPANY,
-                    maskClientId(entity.getClientId()));
+                    maskClientId(entity.getClientId()),
+                    entity.getQboEnvironment());
         }
         return new EffectiveQboCredentials(
                 properties.clientId(),
                 properties.clientSecret(),
                 properties.redirectUri(),
+                properties.baseUrl(),
                 CredentialSource.GLOBAL_FALLBACK,
-                maskClientId(properties.clientId()));
+                maskClientId(properties.clientId()),
+                parseGlobalEnvironment(properties.environment()));
     }
 
     public Optional<CompanyQboCredentialsEntity> findByCompanyId(Long companyId) {
@@ -63,9 +68,13 @@ public class CompanyQboCredentialsService {
                                                         String clientId,
                                                         String clientSecret,
                                                         String redirectUriOverride,
+                                                        QboEnvironment qboEnvironment,
                                                         boolean active) {
         if (StringUtils.isBlank(clientId)) {
             throw new IllegalArgumentException("Client ID is required");
+        }
+        if (qboEnvironment == null) {
+            throw new IllegalArgumentException("QBO environment is required");
         }
         CompanyEntity company = companyRepository.findById(companyId)
                 .orElseThrow(() -> new IllegalArgumentException("Company not found"));
@@ -81,6 +90,7 @@ public class CompanyQboCredentialsService {
             entity.setClientSecretEncrypted(cryptoService.encrypt(clientSecret));
         }
         entity.setRedirectUriOverride(StringUtils.trimToNull(redirectUriOverride));
+        entity.setQboEnvironment(qboEnvironment);
         entity.setActive(active);
         entity.setUpdatedAt(now);
         if (entity.getCreatedAt() == null) {
@@ -114,8 +124,24 @@ public class CompanyQboCredentialsService {
             String clientId,
             String clientSecret,
             String redirectUri,
+            String baseUrl,
             CredentialSource source,
-            String clientIdHint) {
+            String clientIdHint,
+            QboEnvironment qboEnvironment) {
+    }
+
+    private String baseUrlForEnvironment(QboEnvironment environment) {
+        return switch (environment) {
+            case SANDBOX -> "https://sandbox-quickbooks.api.intuit.com";
+            case PRODUCTION -> "https://quickbooks.api.intuit.com";
+        };
+    }
+
+    private QboEnvironment parseGlobalEnvironment(String rawEnvironment) {
+        if (rawEnvironment == null) {
+            return QboEnvironment.SANDBOX;
+        }
+        return rawEnvironment.equalsIgnoreCase("production") ? QboEnvironment.PRODUCTION : QboEnvironment.SANDBOX;
     }
 
     public static String maskClientId(String clientId) {

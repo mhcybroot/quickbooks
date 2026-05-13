@@ -1,7 +1,10 @@
 package com.example.quickbooksimporter.persistence;
 
+import com.example.quickbooksimporter.domain.QboEnvironment;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -30,6 +33,10 @@ public class CompanyQboCredentialsEntity {
     private String clientSecretEncrypted;
 
     private String redirectUriOverride;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private QboEnvironment qboEnvironment;
 
     @Column(nullable = false)
     private boolean active;
@@ -78,6 +85,14 @@ public class CompanyQboCredentialsEntity {
 
     public void setRedirectUriOverride(String redirectUriOverride) {
         this.redirectUriOverride = redirectUriOverride;
+    }
+
+    public QboEnvironment getQboEnvironment() {
+        return qboEnvironment;
+    }
+
+    public void setQboEnvironment(QboEnvironment qboEnvironment) {
+        this.qboEnvironment = qboEnvironment;
     }
 
     public boolean isActive() {

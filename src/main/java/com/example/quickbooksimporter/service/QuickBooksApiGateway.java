@@ -709,7 +709,7 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
     private QueryResponse query(String realmId, String query) {
         String token = connectionService.getActiveConnection().getAccessToken();
         URI uri = UriComponentsBuilder
-                .fromUriString(properties.baseUrl() + "/v3/company/" + realmId + "/query")
+                .fromUriString(connectionService.resolveBaseUrlForCurrentCompany() + "/v3/company/" + realmId + "/query")
                 .queryParam("minorversion", 75)
                 .queryParam("query", query)
                 .encode()
@@ -960,7 +960,7 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
     private <T> T post(String realmId, String path, Map<String, Object> payload, Class<T> responseType) {
         String token = connectionService.getActiveConnection().getAccessToken();
         return restClient.post()
-                .uri(URI.create(properties.baseUrl() + path + "?minorversion=75"))
+                .uri(URI.create(connectionService.resolveBaseUrlForCurrentCompany() + path + "?minorversion=75"))
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.APPLICATION_JSON)
@@ -971,7 +971,7 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
 
     private <T> T postWithOperation(String realmId, String path, Map<String, Object> payload, String operation, Class<T> responseType) {
         String token = connectionService.getActiveConnection().getAccessToken();
-        String uri = properties.baseUrl() + "/v3/company/" + realmId + path + "?operation=" + operation + "&minorversion=75";
+        String uri = connectionService.resolveBaseUrlForCurrentCompany() + "/v3/company/" + realmId + path + "?operation=" + operation + "&minorversion=75";
         return restClient.post()
                 .uri(URI.create(uri))
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)

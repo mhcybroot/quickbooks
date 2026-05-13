@@ -1,11 +1,13 @@
 package com.example.quickbooksimporter.ui;
 
 import com.example.quickbooksimporter.domain.CompanyStatus;
+import com.example.quickbooksimporter.domain.QboEnvironment;
 import com.example.quickbooksimporter.persistence.CompanyEntity;
 import com.example.quickbooksimporter.service.CompanyQboCredentialsService;
 import com.example.quickbooksimporter.service.CompanyAdminService;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.checkbox.Checkbox;
+import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.H3;
@@ -65,6 +67,9 @@ public class CompanyAdminView extends VerticalLayout {
         PasswordField qboClientSecret = new PasswordField("QBO Client Secret");
         qboClientSecret.setPlaceholder("Enter to set/rotate secret");
         TextField qboRedirectUri = new TextField("Redirect URI Override (optional)");
+        ComboBox<QboEnvironment> qboEnvironment = new ComboBox<>("QBO Environment");
+        qboEnvironment.setItems(QboEnvironment.values());
+        qboEnvironment.setValue(QboEnvironment.SANDBOX);
         Checkbox qboActive = new Checkbox("Company credentials active", true);
         Button saveQboCredentials = new Button("Save QBO Credentials", event -> {
             try {
@@ -78,6 +83,7 @@ public class CompanyAdminView extends VerticalLayout {
                         qboClientId.getValue(),
                         qboClientSecret.getValue(),
                         qboRedirectUri.getValue(),
+                        qboEnvironment.getValue(),
                         qboActive.getValue());
                 qboClientSecret.clear();
                 Notification.show("Saved company QuickBooks credentials.");
@@ -116,10 +122,12 @@ public class CompanyAdminView extends VerticalLayout {
             companyQboCredentialsService.findByCompanyId(selected.getId()).ifPresentOrElse(creds -> {
                 qboClientId.setValue(creds.getClientId());
                 qboRedirectUri.setValue(creds.getRedirectUriOverride() == null ? "" : creds.getRedirectUriOverride());
+                qboEnvironment.setValue(creds.getQboEnvironment());
                 qboActive.setValue(creds.isActive());
             }, () -> {
                 qboClientId.clear();
                 qboRedirectUri.clear();
+                qboEnvironment.setValue(QboEnvironment.SANDBOX);
                 qboActive.setValue(true);
             });
             qboClientSecret.clear();
@@ -129,7 +137,7 @@ public class CompanyAdminView extends VerticalLayout {
                 new H3("QuickBooks App Credentials (Per Company)"),
                 new Paragraph("Client secret is write-only. Leave blank if you do not want to rotate it."),
                 new HorizontalLayout(selectedCompanyId, qboClientId, qboClientSecret),
-                new HorizontalLayout(qboRedirectUri, qboActive),
+                new HorizontalLayout(qboRedirectUri, qboEnvironment, qboActive),
                 new HorizontalLayout(saveQboCredentials, disableQboCredentials, connectSelectedCompany));
         credentialsCard.addClassName("corp-card");
 
