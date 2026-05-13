@@ -2,3 +2,4 @@
 /node_modules/
 /.vaadin/
 /src/main/frontend/generated/
+.env
