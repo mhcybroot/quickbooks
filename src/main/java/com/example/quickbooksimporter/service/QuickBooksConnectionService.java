@@ -75,6 +75,18 @@ public class QuickBooksConnectionService {
 
     public QuickBooksConnectionStatus getStatus() {
         Long companyId = currentCompanyService.requireCurrentCompanyId();
+        if (companyId == null) {
+            return new QuickBooksConnectionStatus(
+                    false,
+                    null,
+                    "No Accessible Company",
+                    null,
+                    null,
+                    null,
+                    properties.environment(),
+                    "UNASSIGNED",
+                    "");
+        }
         CompanyQboCredentialsService.EffectiveQboCredentials creds = companyQboCredentialsService.getEffective(companyId);
         return getConnection()
                 .map(connection -> new QuickBooksConnectionStatus(

@@ -3,6 +3,7 @@ package com.example.quickbooksimporter.ui;
 import com.example.quickbooksimporter.service.QuickBooksConnectionService;
 import com.example.quickbooksimporter.service.QuickBooksConnectionStatus;
 import com.example.quickbooksimporter.service.CurrentCompanyService;
+import com.example.quickbooksimporter.service.CurrentUserService;
 import com.example.quickbooksimporter.service.LegalUrlService;
 import com.example.quickbooksimporter.persistence.CompanyEntity;
 import com.example.quickbooksimporter.ui.components.LegalLinks;
@@ -19,15 +20,23 @@ import com.vaadin.flow.component.orderedlayout.Scroller;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.sidenav.SideNav;
 import com.vaadin.flow.component.sidenav.SideNavItem;
+import com.vaadin.flow.router.BeforeEnterEvent;
+import com.vaadin.flow.router.BeforeEnterObserver;
 import com.vaadin.flow.theme.lumo.LumoUtility;
 import jakarta.annotation.security.PermitAll;
 
 @PermitAll
-public class MainLayout extends AppLayout {
+public class MainLayout extends AppLayout implements BeforeEnterObserver {
+
+    private final CurrentCompanyService currentCompanyService;
+    private final CurrentUserService currentUserService;
 
     public MainLayout(QuickBooksConnectionService connectionService,
                       LegalUrlService legalUrlService,
-                      CurrentCompanyService currentCompanyService) {
+                      CurrentCompanyService currentCompanyService,
+                      CurrentUserService currentUserService) {
+        this.currentCompanyService = currentCompanyService;
+        this.currentUserService = currentUserService;
         QuickBooksConnectionStatus status = connectionService.getStatus();
         DrawerToggle toggle = new DrawerToggle();
         H1 title = new H1("QuickBooks Importer");
@@ -50,6 +59,7 @@ public class MainLayout extends AppLayout {
                     .findFirst().orElse(null));
         }
         companySwitcher.setPlaceholder("Select company");
+        companySwitcher.setEnabled(!currentCompanyService.availableCompanies().isEmpty());
         companySwitcher.addValueChangeListener(event -> {
             if (event.getValue() != null) {
                 currentCompanyService.setCurrentCompanyId(event.getValue().getId());
@@ -94,5 +104,17 @@ public class MainLayout extends AppLayout {
         drawer.setPadding(true);
         drawer.setSpacing(true);
         addToDrawer(drawer);
+    }
+
+    @Override
+    public void beforeEnter(BeforeEnterEvent event) {
+        var user = currentUserService.requireUser();
+        if (user.isMustChangePassword() && !event.getLocation().getPath().equals("change-password")) {
+            event.forwardTo("change-password");
+            return;
+        }
+        if (!currentCompanyService.hasAccessibleCompanies()) {
+            event.forwardTo("access-required");
+        }
     }
 }

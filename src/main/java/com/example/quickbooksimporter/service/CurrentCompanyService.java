@@ -30,17 +30,21 @@ public class CurrentCompanyService {
     public List<CompanyEntity> availableCompanies() {
         var user = currentUserService.requireUser();
         if (user.getPlatformRole() == PlatformRole.PLATFORM_ADMIN) {
-            return companyRepository.findAll().stream().filter(company -> company.getStatus().name().equals("ACTIVE")).toList();
+            return companyRepository.findByStatusOrderByNameAsc(com.example.quickbooksimporter.domain.CompanyStatus.ACTIVE);
         }
         return membershipRepository.findByUserUsernameAndCompanyStatusOrderByCompanyNameAsc(user.getUsername(), com.example.quickbooksimporter.domain.CompanyStatus.ACTIVE)
                 .stream().map(CompanyMembershipEntity::getCompany).toList();
+    }
+
+    public boolean hasAccessibleCompanies() {
+        return !availableCompanies().isEmpty();
     }
 
     public Long requireCurrentCompanyId() {
         Optional<Long> selected = selectedCompanyIdFromSession();
         List<CompanyEntity> companies = availableCompanies();
         if (companies.isEmpty()) {
-            throw new IllegalStateException("No accessible company assigned for current user");
+            return null;
         }
         if (selected.isPresent() && companies.stream().anyMatch(company -> company.getId().equals(selected.get()))) {
             return selected.get();
@@ -52,6 +56,9 @@ public class CurrentCompanyService {
 
     public CompanyEntity requireCurrentCompany() {
         Long companyId = requireCurrentCompanyId();
+        if (companyId == null) {
+            throw new IllegalStateException("No accessible company assigned for current user");
+        }
         return companyRepository.findById(companyId)
                 .orElseThrow(() -> new IllegalStateException("Company not found: " + companyId));
     }

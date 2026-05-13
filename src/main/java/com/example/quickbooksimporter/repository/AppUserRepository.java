@@ -9,4 +9,6 @@ public interface AppUserRepository extends JpaRepository<AppUserEntity, Long> {
     Optional<AppUserEntity> findByUsername(String username);
 
     long countByActiveTrueAndPlatformRole(com.example.quickbooksimporter.domain.PlatformRole role);
+
+    long countByActiveTrueAndBlockedFalseAndPlatformRole(com.example.quickbooksimporter.domain.PlatformRole role);
 }

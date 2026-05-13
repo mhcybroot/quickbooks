@@ -15,4 +15,10 @@ public interface CompanyMembershipRepository extends JpaRepository<CompanyMember
     long countByCompanyIdAndRole(Long companyId, CompanyRole role);
 
     List<CompanyMembershipEntity> findByCompanyIdOrderByUserUsernameAsc(Long companyId);
+
+    List<CompanyMembershipEntity> findByUserId(Long userId);
+
+    long countByUserId(Long userId);
+
+    void deleteByUserId(Long userId);
 }

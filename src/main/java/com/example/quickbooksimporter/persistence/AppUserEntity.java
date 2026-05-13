@@ -33,6 +33,18 @@ public class AppUserEntity {
     private boolean active;
 
     @Column(nullable = false)
+    private boolean blocked;
+
+    @Column(nullable = false)
+    private boolean mustChangePassword;
+
+    private String blockedReason;
+
+    private Instant blockedAt;
+
+    private Long blockedByUserId;
+
+    @Column(nullable = false)
     private Instant createdAt;
 
     @Column(nullable = false)
@@ -72,6 +84,46 @@ public class AppUserEntity {
 
     public void setActive(boolean active) {
         this.active = active;
+    }
+
+    public boolean isBlocked() {
+        return blocked;
+    }
+
+    public void setBlocked(boolean blocked) {
+        this.blocked = blocked;
+    }
+
+    public boolean isMustChangePassword() {
+        return mustChangePassword;
+    }
+
+    public void setMustChangePassword(boolean mustChangePassword) {
+        this.mustChangePassword = mustChangePassword;
+    }
+
+    public String getBlockedReason() {
+        return blockedReason;
+    }
+
+    public void setBlockedReason(String blockedReason) {
+        this.blockedReason = blockedReason;
+    }
+
+    public Instant getBlockedAt() {
+        return blockedAt;
+    }
+
+    public void setBlockedAt(Instant blockedAt) {
+        this.blockedAt = blockedAt;
+    }
+
+    public Long getBlockedByUserId() {
+        return blockedByUserId;
+    }
+
+    public void setBlockedByUserId(Long blockedByUserId) {
+        this.blockedByUserId = blockedByUserId;
     }
 
     public Instant getCreatedAt() {

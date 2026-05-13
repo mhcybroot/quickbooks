@@ -59,6 +59,8 @@ public class SecurityBootstrapService {
                     created.setPasswordHash(passwordEncoder.encode(appSecurityProperties.password()));
                     created.setPlatformRole(PlatformRole.PLATFORM_ADMIN);
                     created.setActive(true);
+                    created.setBlocked(false);
+                    created.setMustChangePassword(false);
                     created.setCreatedAt(now);
                     created.setUpdatedAt(now);
                     return appUserRepository.save(created);
