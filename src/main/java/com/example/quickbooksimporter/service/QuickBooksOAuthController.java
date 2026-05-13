@@ -11,6 +11,7 @@ import java.util.UUID;
 public class QuickBooksOAuthController {
 
     private static final String OAUTH_STATE = "qb.oauth.state";
+    private static final String OAUTH_COMPANY_ID = "qb.oauth.company.id";
 
     private final QuickBooksConnectionService connectionService;
 
@@ -19,10 +20,11 @@ public class QuickBooksOAuthController {
     }
 
     @GetMapping("/oauth/quickbooks/connect")
-    public RedirectView connect(HttpSession session) {
+    public RedirectView connect(@RequestParam("companyId") Long companyId, HttpSession session) {
         String state = UUID.randomUUID().toString();
         session.setAttribute(OAUTH_STATE, state);
-        return new RedirectView(connectionService.buildAuthorizationUrl(state));
+        session.setAttribute(OAUTH_COMPANY_ID, companyId);
+        return new RedirectView(connectionService.buildAuthorizationUrl(state, companyId));
     }
 
     @GetMapping("/oauth/quickbooks/callback")
@@ -34,8 +36,13 @@ public class QuickBooksOAuthController {
         if (expectedState == null || !expectedState.equals(state)) {
             throw new IllegalStateException("QuickBooks OAuth state validation failed");
         }
+        Long companyId = (Long) session.getAttribute(OAUTH_COMPANY_ID);
         session.removeAttribute(OAUTH_STATE);
-        connectionService.handleAuthorizationCallback(code, realmId);
+        session.removeAttribute(OAUTH_COMPANY_ID);
+        if (companyId == null) {
+            throw new IllegalStateException("QuickBooks OAuth company context is missing");
+        }
+        connectionService.handleAuthorizationCallback(code, realmId, companyId);
         return new RedirectView("/settings");
     }
 }

@@ -22,33 +22,36 @@ public class ImportHistoryService {
 
     private final ImportRunRepository importRunRepository;
     private final ImportBatchRepository importBatchRepository;
+    private final CurrentCompanyService currentCompanyService;
 
     public ImportHistoryService(ImportRunRepository importRunRepository,
-                                ImportBatchRepository importBatchRepository) {
+                                ImportBatchRepository importBatchRepository,
+                                CurrentCompanyService currentCompanyService) {
         this.importRunRepository = importRunRepository;
         this.importBatchRepository = importBatchRepository;
+        this.currentCompanyService = currentCompanyService;
     }
 
     public List<ImportRunEntity> recentRuns() {
-        return importRunRepository.findTop100ByOrderByCreatedAtDesc();
+        return importRunRepository.findTop100ByCompanyIdOrderByCreatedAtDesc(currentCompanyService.requireCurrentCompanyId());
     }
 
     public List<ImportBatchEntity> recentBatches() {
-        return importBatchRepository.findTop20ByOrderByCreatedAtDesc();
+        return importBatchRepository.findTop20ByCompanyIdOrderByCreatedAtDesc(currentCompanyService.requireCurrentCompanyId());
     }
 
     public List<ImportRunEntity> runsForBatch(Long batchId) {
         if (batchId == null) {
             return List.of();
         }
-        return importRunRepository.findByBatchIdOrderByBatchOrderAscCreatedAtAsc(batchId);
+        return importRunRepository.findByBatchIdAndCompanyIdOrderByBatchOrderAscCreatedAtAsc(batchId, currentCompanyService.requireCurrentCompanyId());
     }
 
     public Optional<ImportRunEntity> findRun(Long runId) {
         if (runId == null) {
             return Optional.empty();
         }
-        return importRunRepository.findById(runId);
+        return importRunRepository.findByIdAndCompanyId(runId, currentCompanyService.requireCurrentCompanyId());
     }
 
     public String buildRunExportCsv(ImportRunEntity run) {

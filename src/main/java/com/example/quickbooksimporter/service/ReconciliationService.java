@@ -43,16 +43,19 @@ public class ReconciliationService {
     private final QuickBooksConnectionService connectionService;
     private final QuickBooksGateway quickBooksGateway;
     private final ReconciliationSessionRepository sessionRepository;
+    private final CurrentCompanyService currentCompanyService;
     private final BankDescriptionPatternParser patternParser = new BankDescriptionPatternParser();
 
     public ReconciliationService(InvoiceCsvParser parser,
                                  QuickBooksConnectionService connectionService,
                                  QuickBooksGateway quickBooksGateway,
-                                 ReconciliationSessionRepository sessionRepository) {
+                                 ReconciliationSessionRepository sessionRepository,
+                                 CurrentCompanyService currentCompanyService) {
         this.parser = parser;
         this.connectionService = connectionService;
         this.quickBooksGateway = quickBooksGateway;
         this.sessionRepository = sessionRepository;
+        this.currentCompanyService = currentCompanyService;
     }
 
     public ReconciliationPreview previewMatches(String fileName,
@@ -208,6 +211,7 @@ public class ReconciliationService {
         session.setDryRun(dryRun);
         session.setStatus("PREVIEWED");
         session.setCreatedAt(Instant.now());
+        session.setCompany(currentCompanyService.requireCurrentCompany());
         session.setAutoMatchedCount(autoMatched.size());
         session.setNeedsReviewCount(needsReview.size());
         session.setBankOnlyCount(bankOnly.size());
@@ -272,7 +276,7 @@ public class ReconciliationService {
     }
 
     public ReconciliationApplyResult applyMatches(Long sessionId, List<Integer> selectedBankRows) {
-        ReconciliationSessionEntity session = sessionRepository.findById(sessionId)
+        ReconciliationSessionEntity session = sessionRepository.findByIdAndCompanyId(sessionId, currentCompanyService.requireCurrentCompanyId())
                 .orElseThrow(() -> new IllegalArgumentException("Reconciliation session not found"));
         String realmId = connectionService.getActiveConnection().getRealmId();
         Set<Integer> selected = selectedBankRows == null ? Set.of() : new HashSet<>(selectedBankRows);
@@ -365,7 +369,7 @@ public class ReconciliationService {
     }
 
     public String exportSessionCsv(Long sessionId) {
-        ReconciliationSessionEntity session = sessionRepository.findById(sessionId)
+        ReconciliationSessionEntity session = sessionRepository.findByIdAndCompanyId(sessionId, currentCompanyService.requireCurrentCompanyId())
                 .orElseThrow(() -> new IllegalArgumentException("Reconciliation session not found"));
         StringWriter writer = new StringWriter();
         CSVFormat format = CSVFormat.DEFAULT.builder()
@@ -408,7 +412,7 @@ public class ReconciliationService {
     }
 
     public Optional<ReconciliationSessionEntity> findSession(Long sessionId) {
-        return sessionRepository.findById(sessionId);
+        return sessionRepository.findByIdAndCompanyId(sessionId, currentCompanyService.requireCurrentCompanyId());
     }
 
     public String exportFileName(Long sessionId) {

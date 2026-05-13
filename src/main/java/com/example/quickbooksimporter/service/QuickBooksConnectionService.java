@@ -1,7 +1,9 @@
 package com.example.quickbooksimporter.service;
 
 import com.example.quickbooksimporter.config.QuickBooksProperties;
+import com.example.quickbooksimporter.persistence.CompanyEntity;
 import com.example.quickbooksimporter.persistence.QboConnectionEntity;
+import com.example.quickbooksimporter.repository.CompanyRepository;
 import com.example.quickbooksimporter.repository.QboConnectionRepository;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import java.net.URI;
@@ -12,7 +14,6 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.UUID;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -27,45 +28,83 @@ public class QuickBooksConnectionService {
     private final QuickBooksProperties properties;
     private final QboConnectionRepository repository;
     private final RestClient restClient;
+    private final CurrentCompanyService currentCompanyService;
+    private final AuditLogService auditLogService;
+    private final CompanyRepository companyRepository;
+    private final CompanyQboCredentialsService companyQboCredentialsService;
 
     public QuickBooksConnectionService(QuickBooksProperties properties,
                                        QboConnectionRepository repository,
-                                       RestClient restClient) {
+                                       RestClient restClient,
+                                       CurrentCompanyService currentCompanyService,
+                                       AuditLogService auditLogService,
+                                       CompanyRepository companyRepository,
+                                       CompanyQboCredentialsService companyQboCredentialsService) {
         this.properties = properties;
         this.repository = repository;
         this.restClient = restClient;
+        this.currentCompanyService = currentCompanyService;
+        this.auditLogService = auditLogService;
+        this.companyRepository = companyRepository;
+        this.companyQboCredentialsService = companyQboCredentialsService;
     }
 
-    public String buildAuthorizationUrl(String state) {
+    public String buildAuthorizationUrl(String state, Long companyId) {
+        CompanyQboCredentialsService.EffectiveQboCredentials creds = companyQboCredentialsService.getEffective(companyId);
         String scope = String.join(" ", properties.scopes());
         return properties.authorizationUrl()
-                + "?client_id=" + encode(properties.clientId())
-                + "&redirect_uri=" + encode(properties.redirectUri())
+                + "?client_id=" + encode(creds.clientId())
+                + "&redirect_uri=" + encode(creds.redirectUri())
                 + "&response_type=code"
                 + "&scope=" + encode(scope)
                 + "&state=" + encode(state);
     }
 
     public Optional<QboConnectionEntity> getConnection() {
-        return repository.findAll().stream().findFirst();
+        Long companyId = currentCompanyService.requireCurrentCompanyId();
+        return repository.findTopByCompanyIdAndConnectedTrueOrderByUpdatedAtDesc(companyId);
+    }
+
+    public CompanyEntity requireCurrentCompany() {
+        return currentCompanyService.requireCurrentCompany();
+    }
+
+    public Optional<QboConnectionEntity> getConnection(Long companyId) {
+        return repository.findTopByCompanyIdAndConnectedTrueOrderByUpdatedAtDesc(companyId);
     }
 
     public QuickBooksConnectionStatus getStatus() {
+        Long companyId = currentCompanyService.requireCurrentCompanyId();
+        CompanyQboCredentialsService.EffectiveQboCredentials creds = companyQboCredentialsService.getEffective(companyId);
         return getConnection()
                 .map(connection -> new QuickBooksConnectionStatus(
                         true,
+                        connection.getCompany().getId(),
+                        connection.getCompany().getName(),
                         connection.getRealmId(),
                         connection.getConnectedAt(),
                         connection.getExpiresAt(),
-                        properties.environment()))
-                .orElse(new QuickBooksConnectionStatus(false, null, null, null, properties.environment()));
+                        properties.environment(),
+                        connection.getCredentialSource(),
+                        connection.getClientIdHint()))
+                .orElse(new QuickBooksConnectionStatus(false, companyId,
+                        currentCompanyService.requireCurrentCompany().getName(), null, null, null,
+                        properties.environment(), creds.source().name(), creds.clientIdHint()));
     }
 
     @Transactional
-    public void handleAuthorizationCallback(String code, String realmId) {
-        TokenResponse response = exchangeToken(code);
-        QboConnectionEntity entity = repository.findByRealmId(realmId).orElseGet(QboConnectionEntity::new);
+    public void handleAuthorizationCallback(String code, String realmId, Long companyId) {
+        TokenResponse response = exchangeToken(code, companyId);
+        QboConnectionEntity existingRealm = repository.findByRealmIdAndConnectedTrue(realmId).orElse(null);
+        if (existingRealm != null && !existingRealm.getCompany().getId().equals(companyId)) {
+            throw new IllegalStateException("Realm already connected to another company");
+        }
+        QboConnectionEntity entity = repository.findTopByCompanyIdOrderByUpdatedAtDesc(companyId).orElseGet(QboConnectionEntity::new);
+        CompanyEntity company = companyRepository.findById(companyId)
+                .orElseThrow(() -> new IllegalStateException("Company not found: " + companyId));
+        CompanyQboCredentialsService.EffectiveQboCredentials creds = companyQboCredentialsService.getEffective(companyId);
         Instant now = Instant.now();
+        entity.setCompany(company);
         entity.setRealmId(realmId);
         entity.setAccessToken(response.accessToken());
         entity.setRefreshToken(response.refreshToken());
@@ -74,15 +113,26 @@ public class QuickBooksConnectionService {
         entity.setRefreshExpiresAt(response.xRefreshTokenExpiresIn() == null ? null : now.plusSeconds(response.xRefreshTokenExpiresIn()));
         entity.setConnectedAt(entity.getConnectedAt() == null ? now : entity.getConnectedAt());
         entity.setUpdatedAt(now);
+        entity.setConnected(true);
+        entity.setCredentialSource(creds.source().name());
+        entity.setClientIdHint(creds.clientIdHint());
         repository.save(entity);
+        auditLogService.log("QBO_CONNECT", company, "Connected realm " + realmId + " using " + creds.source().name());
     }
 
     @Transactional
     public QboConnectionEntity getActiveConnection() {
-        QboConnectionEntity connection = getConnection()
-                .orElseThrow(() -> new IllegalStateException("QuickBooks is not connected"));
+        Long companyId = currentCompanyService.requireCurrentCompanyId();
+        return getActiveConnection(companyId);
+    }
+
+    @Transactional
+    public QboConnectionEntity getActiveConnection(Long companyId) {
+        QboConnectionEntity connection = getConnection(companyId)
+                .orElseThrow(() -> new IllegalStateException("QuickBooks is not connected for selected company"));
         if (connection.getExpiresAt().isBefore(Instant.now().plusSeconds(60))) {
-            TokenResponse response = refreshToken(connection.getRefreshToken());
+            TokenResponse response = refreshToken(connection.getRefreshToken(), companyId);
+            CompanyQboCredentialsService.EffectiveQboCredentials creds = companyQboCredentialsService.getEffective(companyId);
             Instant now = Instant.now();
             connection.setAccessToken(response.accessToken());
             connection.setRefreshToken(response.refreshToken());
@@ -90,40 +140,54 @@ public class QuickBooksConnectionService {
             connection.setExpiresAt(now.plusSeconds(response.expiresIn()));
             connection.setRefreshExpiresAt(response.xRefreshTokenExpiresIn() == null ? null : now.plusSeconds(response.xRefreshTokenExpiresIn()));
             connection.setUpdatedAt(now);
+            connection.setCredentialSource(creds.source().name());
+            connection.setClientIdHint(creds.clientIdHint());
             repository.save(connection);
         }
         return connection;
     }
 
-    private TokenResponse exchangeToken(String code) {
+    @Transactional
+    public void disconnect(Long companyId) {
+        QboConnectionEntity connection = repository.findTopByCompanyIdAndConnectedTrueOrderByUpdatedAtDesc(companyId)
+                .orElseThrow(() -> new IllegalStateException("No active QuickBooks connection found"));
+        connection.setConnected(false);
+        connection.setUpdatedAt(Instant.now());
+        repository.save(connection);
+        auditLogService.log("QBO_DISCONNECT", connection.getCompany(), "Disconnected realm " + connection.getRealmId());
+    }
+
+    private TokenResponse exchangeToken(String code, Long companyId) {
+        CompanyQboCredentialsService.EffectiveQboCredentials creds = companyQboCredentialsService.getEffective(companyId);
         MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
         body.put("grant_type", List.of("authorization_code"));
         body.put("code", List.of(code));
-        body.put("redirect_uri", List.of(properties.redirectUri()));
+        body.put("redirect_uri", List.of(creds.redirectUri()));
         return restClient.post()
                 .uri(URI.create(properties.tokenUrl()))
-                .header(HttpHeaders.AUTHORIZATION, basicAuth())
+                .header(HttpHeaders.AUTHORIZATION, basicAuth(creds.clientId(), creds.clientSecret()))
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .body(body)
                 .retrieve()
                 .body(TokenResponse.class);
     }
 
-    private TokenResponse refreshToken(String refreshToken) {
+    private TokenResponse refreshToken(String refreshToken, Long companyId) {
+        CompanyQboCredentialsService.EffectiveQboCredentials creds = companyQboCredentialsService.getEffective(companyId);
         MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
         body.put("grant_type", List.of("refresh_token"));
         body.put("refresh_token", List.of(refreshToken));
         return restClient.post()
                 .uri(URI.create(properties.tokenUrl()))
-                .header(HttpHeaders.AUTHORIZATION, basicAuth())
+                .header(HttpHeaders.AUTHORIZATION, basicAuth(creds.clientId(), creds.clientSecret()))
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .body(body)
                 .retrieve()
                 .body(TokenResponse.class);
     }
 
-    private String basicAuth() {
-        String raw = properties.clientId() + ":" + properties.clientSecret();
+    private String basicAuth(String clientId, String clientSecret) {
+        String raw = clientId + ":" + clientSecret;
         return "Basic " + Base64.getEncoder().encodeToString(raw.getBytes(StandardCharsets.UTF_8));
     }
 

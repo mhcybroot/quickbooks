@@ -102,6 +102,7 @@ public class BillImportService {
         run.setSourceFileName(fileName);
         run.setMappingProfileName(mappingProfileName);
         run.setCreatedAt(Instant.now());
+        run.setCompany(connectionService.requireCurrentCompany());
         run.setExportCsv(null);
         applyExecutionOptions(run, options);
         for (BillRowValidationResult validation : preview.validations()) {
@@ -202,6 +203,7 @@ public class BillImportService {
         run.setSkippedRows(0);
         run.setExportCsv(null);
         run.setCreatedAt(Instant.now());
+        run.setCompany(connectionService.requireCurrentCompany());
         run.setCompletedAt(Instant.now());
         preview.validations().forEach(v -> run.getRowResults().add(buildRow(run, v)));
         return importRunRepository.save(run);

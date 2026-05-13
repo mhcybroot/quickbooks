@@ -27,6 +27,10 @@ public class ImportRunEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "company_id", nullable = false)
+    private CompanyEntity company;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private EntityType entityType;
@@ -82,6 +86,14 @@ public class ImportRunEntity {
 
     public Long getId() {
         return id;
+    }
+
+    public CompanyEntity getCompany() {
+        return company;
+    }
+
+    public void setCompany(CompanyEntity company) {
+        this.company = company;
     }
 
     public EntityType getEntityType() {

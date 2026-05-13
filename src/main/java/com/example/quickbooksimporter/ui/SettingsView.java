@@ -17,6 +17,7 @@ import com.vaadin.flow.component.html.Paragraph;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.component.UI;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 import jakarta.annotation.security.PermitAll;
@@ -35,17 +36,38 @@ public class SettingsView extends VerticalLayout {
         setSpacing(true);
         add(new H2("QuickBooks Online Connection"));
 
-        Anchor connect = new Anchor("/oauth/quickbooks/connect", "");
+        Long companyId = status.companyId();
+        String connectHref = companyId == null ? "#" : "/oauth/quickbooks/connect?companyId=" + companyId;
+        Anchor connect = new Anchor(connectHref, "");
         connect.getElement().setAttribute("router-ignore", true);
-        connect.add(new Button("Connect QuickBooks"));
+        Button connectButton = new Button("Connect QuickBooks");
+        connectButton.setEnabled(companyId != null);
+        connect.add(connectButton);
+        Button disconnect = new Button("Disconnect QuickBooks", event -> {
+            try {
+                if (status.companyId() == null) {
+                    Notification.show("Select company first.");
+                    return;
+                }
+                connectionService.disconnect(status.companyId());
+                Notification.show("QuickBooks disconnected for company.");
+                UI.getCurrent().getPage().reload();
+            } catch (Exception exception) {
+                Notification.show("Unable to disconnect: " + exception.getMessage());
+            }
+        });
         HorizontalLayout connectionRow = new HorizontalLayout(
                 UiComponents.kpi("Connection", status.connected() ? "Active" : "Not Connected",
                         status.connected() ? "Realm " + status.realmId() : "Connect your QuickBooks sandbox/company"),
+                UiComponents.kpi("Company", status.companyName() == null ? "-" : status.companyName(),
+                        status.companyId() == null ? "No company selected" : "Company ID " + status.companyId()),
+                UiComponents.kpi("Credential Source", status.credentialSource() == null ? "UNKNOWN" : status.credentialSource(),
+                        status.clientIdHint() == null || status.clientIdHint().isBlank() ? "Client not available" : "Client " + status.clientIdHint()),
                 UiComponents.kpi("Environment", status.environment().toUpperCase(),
                         status.expiresAt() == null ? "Token unavailable" : "Token expires at " + status.expiresAt()));
         connectionRow.setWidthFull();
         connectionRow.setFlexGrow(1);
-        add(connectionRow, connect, new Text("Use your Intuit app credentials in application properties or environment variables."));
+        add(connectionRow, new HorizontalLayout(connect, disconnect), new Text("Use your Intuit app credentials in application properties or environment variables."));
 
         Paragraph legalSummary = new Paragraph("Production QuickBooks submission URLs:");
         legalSummary.addClassName("corp-muted");

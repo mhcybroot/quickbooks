@@ -139,6 +139,7 @@ public class InvoiceImportService {
         run.setSourceFileName(fileName);
         run.setMappingProfileName(mappingProfileName);
         run.setCreatedAt(Instant.now());
+        run.setCompany(connectionService.requireCurrentCompany());
         run.setExportCsv(preview.exportCsv());
         applyExecutionOptions(run, options);
 
@@ -185,11 +186,11 @@ public class InvoiceImportService {
     }
 
     public List<ImportRunEntity> recentRuns() {
-        return importRunRepository.findTop20ByOrderByCreatedAtDesc();
+        return importRunRepository.findTop20ByCompanyIdOrderByCreatedAtDesc(connectionService.requireCurrentCompany().getId());
     }
 
     public ImportRunEntity getRun(long id) {
-        return importRunRepository.findById(id)
+        return importRunRepository.findByIdAndCompanyId(id, connectionService.requireCurrentCompany().getId())
                 .orElseThrow(() -> new IllegalArgumentException("Import run not found"));
     }
 
@@ -279,6 +280,7 @@ public class InvoiceImportService {
         run.setSkippedRows(0);
         run.setExportCsv(preview.exportCsv());
         run.setCreatedAt(Instant.now());
+        run.setCompany(connectionService.requireCurrentCompany());
         run.setCompletedAt(Instant.now());
         preview.validations().forEach(validation -> run.getRowResults().add(buildRow(run, validation)));
         return importRunRepository.save(run);

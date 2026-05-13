@@ -2,11 +2,14 @@ package com.example.quickbooksimporter.ui;
 
 import com.example.quickbooksimporter.service.QuickBooksConnectionService;
 import com.example.quickbooksimporter.service.QuickBooksConnectionStatus;
+import com.example.quickbooksimporter.service.CurrentCompanyService;
 import com.example.quickbooksimporter.service.LegalUrlService;
+import com.example.quickbooksimporter.persistence.CompanyEntity;
 import com.example.quickbooksimporter.ui.components.LegalLinks;
 import com.vaadin.flow.component.applayout.AppLayout;
 import com.vaadin.flow.component.applayout.DrawerToggle;
 import com.vaadin.flow.component.button.Button;
+import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.html.Anchor;
 import com.vaadin.flow.component.html.H1;
 import com.vaadin.flow.component.html.Span;
@@ -22,7 +25,9 @@ import jakarta.annotation.security.PermitAll;
 @PermitAll
 public class MainLayout extends AppLayout {
 
-    public MainLayout(QuickBooksConnectionService connectionService, LegalUrlService legalUrlService) {
+    public MainLayout(QuickBooksConnectionService connectionService,
+                      LegalUrlService legalUrlService,
+                      CurrentCompanyService currentCompanyService) {
         QuickBooksConnectionStatus status = connectionService.getStatus();
         DrawerToggle toggle = new DrawerToggle();
         H1 title = new H1("QuickBooks Importer");
@@ -35,7 +40,24 @@ public class MainLayout extends AppLayout {
         logout.getElement().setAttribute("router-ignore", true);
         logout.add(new Button("Sign out", VaadinIcon.SIGN_OUT.create()));
 
-        HorizontalLayout header = new HorizontalLayout(toggle, title, envBadge, logout);
+        ComboBox<CompanyEntity> companySwitcher = new ComboBox<>();
+        companySwitcher.setItems(currentCompanyService.availableCompanies());
+        companySwitcher.setItemLabelGenerator(CompanyEntity::getName);
+        Long selectedCompanyId = status.companyId();
+        if (selectedCompanyId != null) {
+            companySwitcher.setValue(companySwitcher.getListDataView().getItems()
+                    .filter(company -> company.getId().equals(selectedCompanyId))
+                    .findFirst().orElse(null));
+        }
+        companySwitcher.setPlaceholder("Select company");
+        companySwitcher.addValueChangeListener(event -> {
+            if (event.getValue() != null) {
+                currentCompanyService.setCurrentCompanyId(event.getValue().getId());
+                getUI().ifPresent(ui -> ui.getPage().reload());
+            }
+        });
+
+        HorizontalLayout header = new HorizontalLayout(toggle, title, companySwitcher, envBadge, logout);
         header.addClassNames(LumoUtility.Display.FLEX, LumoUtility.AlignItems.CENTER, LumoUtility.Gap.MEDIUM,
                 LumoUtility.Padding.MEDIUM);
         header.expand(title);
@@ -63,6 +85,8 @@ public class MainLayout extends AppLayout {
         nav.addItem(new SideNavItem("Cleanup Expenses", ExpenseCleanupView.class, VaadinIcon.BACKWARDS.create()));
         nav.addItem(new SideNavItem("QuickBooks Settings", SettingsView.class, VaadinIcon.COG.create()));
         nav.addItem(new SideNavItem("Import History", ImportHistoryView.class, VaadinIcon.CHART.create()));
+        nav.addItem(new SideNavItem("Admin Companies", CompanyAdminView.class, VaadinIcon.BUILDING.create()));
+        nav.addItem(new SideNavItem("Admin Users", UserAdminView.class, VaadinIcon.USERS.create()));
         Scroller navScroller = new Scroller(nav);
         VerticalLayout drawer = new VerticalLayout(navScroller, LegalLinks.inline(legalUrlService));
         drawer.setSizeFull();

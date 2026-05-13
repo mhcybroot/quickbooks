@@ -23,13 +23,16 @@ public class ImportBatchService {
     private final ImportBatchRepository importBatchRepository;
     private final ImportRunRepository importRunRepository;
     private final ImportWorkflowFacade workflowFacade;
+    private final CurrentCompanyService currentCompanyService;
 
     public ImportBatchService(ImportBatchRepository importBatchRepository,
                               ImportRunRepository importRunRepository,
-                              ImportWorkflowFacade workflowFacade) {
+                              ImportWorkflowFacade workflowFacade,
+                              CurrentCompanyService currentCompanyService) {
         this.importBatchRepository = importBatchRepository;
         this.importRunRepository = importRunRepository;
         this.workflowFacade = workflowFacade;
+        this.currentCompanyService = currentCompanyService;
     }
 
     @Transactional
@@ -43,12 +46,13 @@ public class ImportBatchService {
         batch.setCompletedFiles(0);
         batch.setCreatedAt(Instant.now());
         batch.setUpdatedAt(Instant.now());
+        batch.setCompany(currentCompanyService.requireCurrentCompany());
         return importBatchRepository.save(batch);
     }
 
     @Transactional
     public ImportBatchEntity updateValidationSnapshot(Long batchId, int totalFiles, int validatedFiles, int runnableFiles) {
-        ImportBatchEntity batch = importBatchRepository.findById(batchId)
+        ImportBatchEntity batch = importBatchRepository.findByIdAndCompanyId(batchId, currentCompanyService.requireCurrentCompanyId())
                 .orElseThrow(() -> new IllegalArgumentException("Batch not found"));
         batch.setTotalFiles(totalFiles);
         batch.setValidatedFiles(validatedFiles);
@@ -59,7 +63,7 @@ public class ImportBatchService {
     }
 
     public List<String> dependencyWarnings(List<BatchFileRequest> files) {
-        List<ImportRunEntity> recentRuns = importRunRepository.findTop100ByOrderByCreatedAtDesc();
+        List<ImportRunEntity> recentRuns = importRunRepository.findTop100ByCompanyIdOrderByCreatedAtDesc(currentCompanyService.requireCurrentCompanyId());
         Set<String> knownInvoices = successfulIdentifiers(recentRuns, EntityType.INVOICE);
         Set<String> knownBills = successfulIdentifiers(recentRuns, EntityType.BILL);
         Set<String> batchInvoices = new LinkedHashSet<>();
@@ -99,7 +103,7 @@ public class ImportBatchService {
 
     @Transactional
     public BatchExecutionReport executeBatch(Long batchId, List<BatchFileRequest> files) {
-        ImportBatchEntity batch = importBatchRepository.findById(batchId)
+        ImportBatchEntity batch = importBatchRepository.findByIdAndCompanyId(batchId, currentCompanyService.requireCurrentCompanyId())
                 .orElseThrow(() -> new IllegalArgumentException("Batch not found"));
         batch.setStatus(ImportBatchStatus.RUNNING);
         batch.setUpdatedAt(Instant.now());
@@ -146,7 +150,7 @@ public class ImportBatchService {
     }
 
     public List<ImportBatchEntity> recentBatches() {
-        return importBatchRepository.findTop20ByOrderByCreatedAtDesc();
+        return importBatchRepository.findTop20ByCompanyIdOrderByCreatedAtDesc(currentCompanyService.requireCurrentCompanyId());
     }
 
     private Set<String> successfulIdentifiers(List<ImportRunEntity> runs, EntityType entityType) {

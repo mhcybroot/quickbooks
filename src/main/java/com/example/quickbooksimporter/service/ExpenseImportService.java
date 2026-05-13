@@ -106,6 +106,7 @@ public class ExpenseImportService {
         run.setSourceFileName(fileName);
         run.setMappingProfileName(mappingProfileName);
         run.setCreatedAt(Instant.now());
+        run.setCompany(connectionService.requireCurrentCompany());
         run.setExportCsv(null);
         applyExecutionOptions(run, options);
 
@@ -181,6 +182,7 @@ public class ExpenseImportService {
         run.setSkippedRows(0);
         run.setExportCsv(null);
         run.setCreatedAt(Instant.now());
+        run.setCompany(connectionService.requireCurrentCompany());
         run.setCompletedAt(Instant.now());
         preview.validations().forEach(validation -> run.getRowResults().add(buildRow(run, validation)));
         return importRunRepository.save(run);
