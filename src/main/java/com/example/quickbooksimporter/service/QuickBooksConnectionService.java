@@ -97,7 +97,17 @@ public class QuickBooksConnectionService {
         TokenResponse response = exchangeToken(code, companyId);
         QboConnectionEntity existingRealm = repository.findByRealmIdAndConnectedTrue(realmId).orElse(null);
         if (existingRealm != null && !existingRealm.getCompany().getId().equals(companyId)) {
-            throw new IllegalStateException("Realm already connected to another company");
+            existingRealm.setConnected(false);
+            existingRealm.setUpdatedAt(Instant.now());
+            repository.save(existingRealm);
+            auditLogService.log("QBO_REALM_REASSIGNED",
+                    existingRealm.getCompany(),
+                    "Realm " + realmId + " was reassigned to companyId=" + companyId);
+            auditLogService.log("QBO_DISCONNECT",
+                    existingRealm.getCompany(),
+                    "Disconnected realm " + realmId + " because it was reassigned to companyId=" + companyId);
+            // Continue and connect the same realm to the requested company.
+            // This preserves one-active-realm-per-company constraints without forcing manual cleanup.
         }
         QboConnectionEntity entity = repository.findTopByCompanyIdOrderByUpdatedAtDesc(companyId).orElseGet(QboConnectionEntity::new);
         CompanyEntity company = companyRepository.findById(companyId)
