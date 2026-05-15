@@ -1,10 +1,13 @@
 package com.example.quickbooksimporter.ui;
 
+import com.example.quickbooksimporter.domain.AppJobStatus;
 import com.example.quickbooksimporter.domain.ExpenseImportPreview;
 import com.example.quickbooksimporter.domain.ExpenseImportPreviewRow;
 import com.example.quickbooksimporter.domain.ImportRowStatus;
 import com.example.quickbooksimporter.domain.ImportRunStatus;
 import com.example.quickbooksimporter.domain.NormalizedExpenseField;
+import com.example.quickbooksimporter.service.AppJobService;
+import com.example.quickbooksimporter.service.AppJobSnapshot;
 import com.example.quickbooksimporter.service.ExpenseImportService;
 import com.example.quickbooksimporter.service.ExpenseMappingProfileService;
 import com.example.quickbooksimporter.service.DateFormatOption;
@@ -12,9 +15,14 @@ import com.example.quickbooksimporter.service.ImportExecutionMode;
 import com.example.quickbooksimporter.service.ImportExecutionOptions;
 import com.example.quickbooksimporter.service.ImportBackgroundService;
 import com.example.quickbooksimporter.service.ImportHistoryService;
+import com.example.quickbooksimporter.service.ImportProgressService;
+import com.example.quickbooksimporter.service.ImportPreviewJobCodec;
+import com.example.quickbooksimporter.service.ImportPreviewJobResult;
+import com.example.quickbooksimporter.service.ImportRunProgressSnapshot;
 import com.example.quickbooksimporter.service.InvoiceCsvParser;
 import com.example.quickbooksimporter.service.MappingProfileSummary;
 import com.example.quickbooksimporter.service.ParsedCsvDocument;
+import com.example.quickbooksimporter.service.QuickBooksJobService;
 import com.example.quickbooksimporter.ui.components.UiComponents;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
@@ -28,9 +36,11 @@ import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.component.progressbar.ProgressBar;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.component.upload.Upload;
 import com.vaadin.flow.component.upload.receivers.MemoryBuffer;
+import com.vaadin.flow.component.AttachEvent;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 import jakarta.annotation.security.PermitAll;
@@ -50,6 +60,10 @@ public class ExpenseImportView extends VerticalLayout {
     private final ExpenseImportService expenseImportService;
     private final ImportBackgroundService backgroundService;
     private final ImportHistoryService importHistoryService;
+    private final ImportProgressService importProgressService;
+    private final QuickBooksJobService quickBooksJobService;
+    private final AppJobService appJobService;
+    private final ImportPreviewJobCodec importPreviewJobCodec;
 
     private final MemoryBuffer uploadBuffer = new MemoryBuffer();
     private final Upload upload = new Upload(uploadBuffer);
@@ -60,28 +74,41 @@ public class ExpenseImportView extends VerticalLayout {
     private final FormLayout mappingForm = new FormLayout();
     private final Grid<ExpenseImportPreviewRow> previewGrid = new Grid<>(ExpenseImportPreviewRow.class, false);
     private final Paragraph summary = new Paragraph("Upload an expense CSV to begin.");
+    private final Paragraph progressSummary = new Paragraph("No live import is running.");
+    private final Paragraph progressDetails = new Paragraph();
+    private final ProgressBar progressBar = new ProgressBar();
+    private final Button previewButton = new Button("Preview & Validate");
 
     private final Map<NormalizedExpenseField, ComboBox<String>> fieldSelectors = new EnumMap<>(NormalizedExpenseField.class);
 
     private byte[] uploadedBytes;
     private String uploadedFileName;
     private String trackingFileName;
+    private Long previewJobId;
     private List<String> currentHeaders = List.of();
     private ExpenseImportPreview currentPreview;
+    private boolean pollListenerRegistered;
 
     public ExpenseImportView(InvoiceCsvParser parser,
                              ExpenseMappingProfileService mappingProfileService,
                              ExpenseImportService expenseImportService,
                              ImportBackgroundService backgroundService,
-                             ImportHistoryService importHistoryService) {
+                             ImportHistoryService importHistoryService,
+                             ImportProgressService importProgressService,
+                             QuickBooksJobService quickBooksJobService,
+                             AppJobService appJobService,
+                             ImportPreviewJobCodec importPreviewJobCodec) {
         this.parser = parser;
         this.mappingProfileService = mappingProfileService;
         this.expenseImportService = expenseImportService;
         this.backgroundService = backgroundService;
         this.importHistoryService = importHistoryService;
+        this.importProgressService = importProgressService;
+        this.quickBooksJobService = quickBooksJobService;
+        this.appJobService = appJobService;
+        this.importPreviewJobCodec = importPreviewJobCodec;
         addClassName("corp-page");
         setSizeFull();
-        getUI().ifPresent(ui -> ui.addPollListener(event -> refreshBackgroundProgress()));
         add(new H2("Expense Import"),
                 new Paragraph("Upload, map, validate, review, and import expense transactions into QuickBooks."),
                 UiComponents.importStepper("Upload"));
@@ -90,6 +117,15 @@ public class ExpenseImportView extends VerticalLayout {
         configureMappingForm();
         configurePreviewGrid();
         configureActions();
+    }
+
+    @Override
+    protected void onAttach(AttachEvent attachEvent) {
+        super.onAttach(attachEvent);
+        if (!pollListenerRegistered) {
+            attachEvent.getUI().addPollListener(event -> { refreshPreviewJob(); refreshBackgroundProgress(); });
+            pollListenerRegistered = true;
+        }
     }
 
     private void configureUpload() {
@@ -158,11 +194,14 @@ public class ExpenseImportView extends VerticalLayout {
         previewGrid.addClassName("corp-grid");
         previewFilter.setItems(ImportRowStatus.values());
         previewFilter.addValueChangeListener(event -> applyPreviewFilter());
-        add(UiComponents.card(new H3("Stage 4: Validation Preview"), summary, previewFilter, previewGrid));
+        progressBar.setWidthFull();
+        progressBar.setVisible(false);
+        progressDetails.setVisible(false);
+        add(UiComponents.card(new H3("Stage 4: Validation Preview"), summary, progressSummary, progressBar, progressDetails, previewFilter, previewGrid));
     }
 
     private void configureActions() {
-        Button previewButton = new Button("Preview & Validate", event -> previewImport());
+        previewButton.addClickListener(event -> previewImport());
         Button saveProfileButton = new Button("Save Mapping Profile", event -> saveProfile());
         Button importButton = new Button("Import Expenses", event -> importPreview(ImportExecutionMode.STRICT_ALL_ROWS));
         Button importReadyOnlyButton = new Button("Import Ready Rows Only", event -> importPreview(ImportExecutionMode.IMPORT_READY_ONLY));
@@ -179,15 +218,20 @@ public class ExpenseImportView extends VerticalLayout {
             notifyWarning("Upload a CSV file first.");
             return;
         }
-        currentPreview = expenseImportService.preview(
-                uploadedFileName,
-                uploadedBytes,
-                currentMapping(),
-                txnDateFormat.getValue() == null ? DateFormatOption.AUTO : txnDateFormat.getValue());
-        applyPreviewFilter();
-        long readyCount = currentPreview.rows().stream().filter(row -> row.status() == ImportRowStatus.READY).count();
-        long invalidCount = currentPreview.rows().stream().filter(row -> row.status() == ImportRowStatus.INVALID).count();
-        summary.setText("Preview complete: " + readyCount + " ready, " + invalidCount + " invalid. Use 'Import Ready Rows Only' to skip invalid rows.");
+        previewButton.setEnabled(false);
+        previewJobId = quickBooksJobService.enqueueImportPreview(
+                com.example.quickbooksimporter.domain.EntityType.EXPENSE,
+                new QuickBooksJobService.ImportPreviewRequest(
+                        uploadedFileName, uploadedBytes,
+                        txnDateFormat.getValue() == null ? DateFormatOption.AUTO : txnDateFormat.getValue(),
+                        false, Map.of(), Map.of(), currentMapping(), Map.of(), Map.of(), Map.of(), Map.of())).getId();
+        summary.setText("Preview started in background. You can keep using the page while validation runs.");
+        progressSummary.setText("Preview job is queued.");
+        progressDetails.setText("QuickBooks validation checks will update here.");
+        progressBar.setVisible(true);
+        progressDetails.setVisible(true);
+        progressBar.setIndeterminate(true);
+        getUI().ifPresent(ui -> ui.setPollInterval(3000));
     }
 
     private void saveProfile() {
@@ -215,6 +259,9 @@ public class ExpenseImportView extends VerticalLayout {
         notifySuccess(message);
         summary.setText(message);
         trackingFileName = uploadedFileName;
+        progressBar.setVisible(true);
+        progressDetails.setVisible(true);
+        progressBar.setIndeterminate(true);
         getUI().ifPresent(ui -> ui.setPollInterval(3000));
         refreshBackgroundProgress();
     }
@@ -250,15 +297,73 @@ public class ExpenseImportView extends VerticalLayout {
         if (trackingFileName == null || trackingFileName.isBlank()) {
             return;
         }
-        importHistoryService.findLatestRunForFile(com.example.quickbooksimporter.domain.EntityType.EXPENSE, trackingFileName)
-                .ifPresent(run -> {
-                    summary.setText("Run #" + run.getId() + " is " + run.getStatus()
-                            + " | attempted=" + run.getAttemptedRows()
-                            + ", imported=" + run.getImportedRows()
-                            + ", skipped=" + run.getSkippedRows() + ".");
-                    if (run.getStatus() != ImportRunStatus.QUEUED && run.getStatus() != ImportRunStatus.RUNNING) {
-                        getUI().ifPresent(ui -> ui.setPollInterval(-1));
-                    }
-                });
+        importProgressService.findLatestRunProgressForFile(com.example.quickbooksimporter.domain.EntityType.EXPENSE, trackingFileName)
+                .ifPresent(this::applyRunProgress);
+    }
+
+    private void applyRunProgress(ImportRunProgressSnapshot snapshot) {
+        progressBar.setVisible(true);
+        progressDetails.setVisible(true);
+        progressBar.setIndeterminate(false);
+        progressBar.setValue(snapshot.progressValue());
+        progressSummary.setText("Run #" + snapshot.runId() + " is " + snapshot.status() + " | " + snapshot.percentLabel());
+        progressDetails.setText(snapshot.processedRows() + "/" + snapshot.runnableRows() + " runnable rows"
+                + " | imported=" + snapshot.importedRows()
+                + " | skipped=" + snapshot.skippedRows()
+                + " | " + snapshot.remainingLabel()
+                + " | " + snapshot.throughputLabel()
+                + " | " + snapshot.startedLabel());
+        if (snapshot.status() != ImportRunStatus.QUEUED && snapshot.status() != ImportRunStatus.RUNNING) {
+            trackingFileName = null;
+            stopPollingIfIdle();
+        }
+    }
+
+    private void refreshPreviewJob() {
+        if (previewJobId != null) {
+            appJobService.findSnapshot(previewJobId).ifPresent(this::applyPreviewJobSnapshot);
+        }
+    }
+
+    private void applyPreviewJobSnapshot(AppJobSnapshot snapshot) {
+        progressBar.setVisible(true);
+        progressDetails.setVisible(true);
+        if (snapshot.status() == AppJobStatus.QUEUED || snapshot.status() == AppJobStatus.RUNNING) {
+            progressBar.setIndeterminate(snapshot.totalUnits() <= 1);
+            if (!progressBar.isIndeterminate()) {
+                progressBar.setValue(snapshot.progressValue());
+            }
+            progressSummary.setText(snapshot.description() + " is " + snapshot.status() + " | " + snapshot.percentLabel());
+            progressDetails.setText(snapshot.summaryMessage());
+            return;
+        }
+        previewButton.setEnabled(true);
+        if (snapshot.status() == AppJobStatus.FAILED) {
+            progressBar.setIndeterminate(false);
+            progressBar.setValue(0d);
+            progressSummary.setText("Preview failed");
+            progressDetails.setText(snapshot.summaryMessage());
+            notifyWarning("Preview failed: " + snapshot.summaryMessage());
+            previewJobId = null;
+            stopPollingIfIdle();
+            return;
+        }
+        ImportPreviewJobResult result = appJobService.readResult(snapshot.resultPayload(), ImportPreviewJobResult.class);
+        currentPreview = importPreviewJobCodec.readExpensePreview(result);
+        applyPreviewFilter();
+        summary.setText("Preview complete: " + result.readyRows() + " ready, " + result.invalidRows()
+                + " invalid. Use 'Import Ready Rows Only' to skip invalid rows.");
+        progressBar.setIndeterminate(false);
+        progressBar.setValue(1d);
+        progressSummary.setText("Preview finished");
+        progressDetails.setText(snapshot.summaryMessage());
+        previewJobId = null;
+        stopPollingIfIdle();
+    }
+
+    private void stopPollingIfIdle() {
+        if (previewJobId == null && (trackingFileName == null || trackingFileName.isBlank())) {
+            getUI().ifPresent(ui -> ui.setPollInterval(-1));
+        }
     }
 }

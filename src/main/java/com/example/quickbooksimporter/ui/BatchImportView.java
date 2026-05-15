@@ -1,13 +1,24 @@
 package com.example.quickbooksimporter.ui;
 
+import com.example.quickbooksimporter.domain.AppJobStatus;
 import com.example.quickbooksimporter.domain.EntityType;
 import com.example.quickbooksimporter.persistence.ImportBatchEntity;
+import com.example.quickbooksimporter.persistence.ImportRunEntity;
+import com.example.quickbooksimporter.service.AppJobService;
+import com.example.quickbooksimporter.service.AppJobSnapshot;
+import com.example.quickbooksimporter.service.BatchValidationJobResult;
+import com.example.quickbooksimporter.service.ImportBatchBackgroundService;
 import com.example.quickbooksimporter.service.ImportBatchService;
+import com.example.quickbooksimporter.service.ImportBatchProgressSnapshot;
+import com.example.quickbooksimporter.service.ImportHistoryService;
+import com.example.quickbooksimporter.service.ImportPreviewJobCodec;
 import com.example.quickbooksimporter.service.ImportPreviewOptions;
 import com.example.quickbooksimporter.service.ImportPreviewSummary;
+import com.example.quickbooksimporter.service.ImportProgressService;
 import com.example.quickbooksimporter.service.ImportWorkflowFacade;
 import com.example.quickbooksimporter.service.MappingProfileSummary;
 import com.example.quickbooksimporter.service.QuickBooksInvoiceRef;
+import com.example.quickbooksimporter.service.QuickBooksJobService;
 import com.example.quickbooksimporter.service.QuickBooksConnectionService;
 import com.example.quickbooksimporter.service.QuickBooksConnectionStatus;
 import com.example.quickbooksimporter.ui.components.UiComponents;
@@ -24,9 +35,11 @@ import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.checkbox.Checkbox;
+import com.vaadin.flow.component.progressbar.ProgressBar;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.component.upload.Upload;
 import com.vaadin.flow.component.upload.receivers.MultiFileMemoryBuffer;
+import com.vaadin.flow.component.AttachEvent;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 import com.vaadin.flow.server.StreamResource;
@@ -53,7 +66,13 @@ public class BatchImportView extends VerticalLayout {
 
     private final ImportWorkflowFacade workflowFacade;
     private final ImportBatchService batchService;
+    private final ImportBatchBackgroundService batchBackgroundService;
+    private final ImportHistoryService importHistoryService;
+    private final ImportProgressService importProgressService;
     private final QuickBooksConnectionStatus connectionStatus;
+    private final QuickBooksJobService quickBooksJobService;
+    private final AppJobService appJobService;
+    private final ImportPreviewJobCodec importPreviewJobCodec;
 
     private final List<BatchDraftItem> items = new ArrayList<>();
     private final MultiFileMemoryBuffer buffer = new MultiFileMemoryBuffer();
@@ -66,17 +85,37 @@ public class BatchImportView extends VerticalLayout {
     private final Paragraph detailSummary = new Paragraph("Select a file to review and validate it.");
     private final Checkbox skipInvalidRows = new Checkbox("Skip invalid rows per file");
     private final Anchor downloadAnchor = new Anchor();
+    private final Paragraph progressSummary = new Paragraph("No live batch is running.");
+    private final Paragraph progressDetails = new Paragraph();
+    private final ProgressBar progressBar = new ProgressBar();
+    private final Button validateSelectedButton = new Button("Validate Selected File");
+    private final Button validateAllButton = new Button("Validate All");
 
     private BatchDraftItem selectedItem;
     private Long activeBatchId;
+    private Long trackingBatchId;
+    private Long validationJobId;
     private boolean syncingDetailFields;
+    private boolean pollListenerRegistered;
 
     public BatchImportView(ImportWorkflowFacade workflowFacade,
                            ImportBatchService batchService,
-                           QuickBooksConnectionService connectionService) {
+                           ImportBatchBackgroundService batchBackgroundService,
+                           ImportHistoryService importHistoryService,
+                           ImportProgressService importProgressService,
+                           QuickBooksConnectionService connectionService,
+                           QuickBooksJobService quickBooksJobService,
+                           AppJobService appJobService,
+                           ImportPreviewJobCodec importPreviewJobCodec) {
         this.workflowFacade = workflowFacade;
         this.batchService = batchService;
+        this.batchBackgroundService = batchBackgroundService;
+        this.importHistoryService = importHistoryService;
+        this.importProgressService = importProgressService;
         this.connectionStatus = connectionService.getStatus();
+        this.quickBooksJobService = quickBooksJobService;
+        this.appJobService = appJobService;
+        this.importPreviewJobCodec = importPreviewJobCodec;
 
         initializeView();
     }
@@ -105,6 +144,18 @@ public class BatchImportView extends VerticalLayout {
                             new H3("Initialization Error"),
                             new Paragraph(exception.getClass().getSimpleName() + ": " + String.valueOf(exception.getMessage())),
                             new Paragraph("Open the single-import screens or import history while this page is being corrected.")));
+        }
+    }
+
+    @Override
+    protected void onAttach(AttachEvent attachEvent) {
+        super.onAttach(attachEvent);
+        if (!pollListenerRegistered) {
+            attachEvent.getUI().addPollListener(event -> {
+                refreshValidationJob();
+                refreshBatchProgress();
+            });
+            pollListenerRegistered = true;
         }
     }
 
@@ -187,30 +238,38 @@ public class BatchImportView extends VerticalLayout {
             refreshGrid();
         });
 
-        Button validateSelected = new Button("Validate Selected File", event -> validateSelected());
-        validateSelected.addThemeName("primary");
+        validateSelectedButton.addClickListener(event -> validateSelected());
+        validateSelectedButton.addThemeName("primary");
         downloadAnchor.setVisible(false);
         downloadAnchor.setText("Download normalized CSV");
 
         add(UiComponents.card(
                 new H3("Selected File"),
                 detailSummary,
-                new HorizontalLayout(entityType, profile, validateSelected, downloadAnchor)));
+                new HorizontalLayout(entityType, profile, validateSelectedButton, downloadAnchor)));
     }
 
     private void configureActions() {
-        Button validateAll = new Button("Validate All", event -> validateAll());
+        validateAllButton.addClickListener(event -> validateAll());
         Button runAll = new Button("Run All", event -> runAll());
         Button openHistory = new Button("Open History", event -> UI.getCurrent().navigate(ImportHistoryView.class));
         Button clear = new Button("Clear Draft", event -> clearDraft());
-        validateAll.addThemeName("primary");
+        validateAllButton.addThemeName("primary");
         runAll.addThemeName("primary");
 
         skipInvalidRows.setValue(false);
-        HorizontalLayout actions = new HorizontalLayout(batchName, validateAll, runAll, openHistory, clear);
+        HorizontalLayout actions = new HorizontalLayout(batchName, validateAllButton, runAll, openHistory, clear);
         actions.add(skipInvalidRows);
         actions.setWidthFull();
-        add(UiComponents.card(new H3("Batch Actions"), new Paragraph("Validate the queue first, then run valid files in system-managed order."), actions));
+        progressBar.setWidthFull();
+        progressBar.setVisible(false);
+        progressDetails.setVisible(false);
+        add(UiComponents.card(new H3("Batch Actions"),
+                new Paragraph("Validate the queue first, then run valid files in system-managed order."),
+                actions,
+                progressSummary,
+                progressBar,
+                progressDetails));
     }
 
     private void validateSelected() {
@@ -218,9 +277,17 @@ public class BatchImportView extends VerticalLayout {
             notifyWarning("Select a file first.");
             return;
         }
-        validateItem(selectedItem, draftInvoiceRefsForBatch(selectedItem));
-        refreshGrid();
-        refreshDetailPanel();
+        validateSelectedButton.setEnabled(false);
+        validationJobId = quickBooksJobService.enqueueBatchValidation(null,
+                List.of(toValidationRequest(selectedItem)),
+                skipInvalidRows.getValue()).getId();
+        dependencySummary.setText("Validation started for " + selectedItem.getFileName() + ".");
+        progressSummary.setText("Validation job is queued.");
+        progressDetails.setText("QuickBooks validation checks will update here.");
+        progressBar.setVisible(true);
+        progressDetails.setVisible(true);
+        progressBar.setIndeterminate(true);
+        getUI().ifPresent(ui -> ui.setPollInterval(3000));
     }
 
     private void validateAll() {
@@ -229,25 +296,18 @@ public class BatchImportView extends VerticalLayout {
             return;
         }
         ensureBatch();
-        items.stream()
-                .sorted(Comparator.comparingInt((BatchDraftItem item) -> item.getEntityType().batchPriority())
-                        .thenComparingInt(BatchDraftItem::getPosition))
-                .forEach(item -> validateItem(item, draftInvoiceRefsForBatch(item)));
-        batchService.updateValidationSnapshot(activeBatchId, items.size(),
-                (int) items.stream().filter(item -> item.getPreviewSummary() != null).count(),
-                (int) items.stream().filter(item -> item.getPreviewSummary() != null
-                        && !item.getPreviewSummary().hasBlockingIssues(
-                        skipInvalidRows.getValue() ? com.example.quickbooksimporter.service.ImportExecutionMode.IMPORT_READY_ONLY
-                                : com.example.quickbooksimporter.service.ImportExecutionMode.STRICT_ALL_ROWS)).count());
-        List<String> warnings = batchService.dependencyWarnings(items.stream()
-                .map(this::toBatchRequest)
-                .toList());
-        dependencySummary.setText(warnings.isEmpty()
-                ? "All validations completed. Files with invalid rows remain blocked, valid independent files can run."
-                : String.join(" | ", warnings));
-        refreshGrid();
-        refreshDetailPanel();
-        notifySuccess("Validated " + items.size() + " files.");
+        validateAllButton.setEnabled(false);
+        validateSelectedButton.setEnabled(false);
+        validationJobId = quickBooksJobService.enqueueBatchValidation(activeBatchId,
+                items.stream().map(this::toValidationRequest).toList(),
+                skipInvalidRows.getValue()).getId();
+        dependencySummary.setText("Batch validation started in the background.");
+        progressSummary.setText("Validation job is queued.");
+        progressDetails.setText("QuickBooks validation checks will update here.");
+        progressBar.setVisible(true);
+        progressDetails.setVisible(true);
+        progressBar.setIndeterminate(true);
+        getUI().ifPresent(ui -> ui.setPollInterval(3000));
     }
 
     private void runAll() {
@@ -261,26 +321,23 @@ public class BatchImportView extends VerticalLayout {
         }
         if (items.stream().anyMatch(item -> item.getPreviewSummary() == null)) {
             validateAll();
+            notifyWarning("Validation started. Run the batch again after validation completes.");
+            return;
         }
         ensureBatch();
-        ImportBatchService.BatchExecutionReport report = batchService.executeBatch(activeBatchId, items.stream()
+        ImportBatchEntity prepared = batchBackgroundService.enqueueForCurrentCompany(activeBatchId, items.stream()
                 .map(this::toBatchRequest)
                 .toList());
-        report.results().forEach(result -> {
-            BatchDraftItem item = items.stream()
-                    .filter(candidate -> Objects.equals(candidate.getFileName(), result.importRun().getSourceFileName()))
-                    .findFirst()
-                    .orElse(null);
-            if (item != null) {
-                item.setRunStatusText(result.importRun().getStatus().name());
-                item.setRunId(result.importRun().getId());
-                item.setWarningText(result.message());
-            }
-        });
-        dependencySummary.setText("Batch " + report.batch().getBatchName() + " finished with status " + report.batch().getStatus().name() + ".");
-        refreshGrid();
-        refreshDetailPanel();
-        notifySuccess("Batch run completed. Review history for row-level outcomes.");
+        trackingBatchId = prepared.getId();
+        progressBar.setVisible(true);
+        progressDetails.setVisible(true);
+        progressBar.setIndeterminate(true);
+        progressSummary.setText("Batch #" + prepared.getId() + " is starting.");
+        progressDetails.setText("Calculating ETA and preparing file execution order...");
+        dependencySummary.setText("Batch " + prepared.getBatchName() + " is running in the background.");
+        getUI().ifPresent(ui -> ui.setPollInterval(3000));
+        refreshBatchProgress();
+        notifySuccess("Batch run started. Progress and ETA will update live.");
     }
 
     private void validateItem(BatchDraftItem item, Map<String, QuickBooksInvoiceRef> draftInvoiceRefs) {
@@ -304,6 +361,15 @@ public class BatchImportView extends VerticalLayout {
                     .findFirst()
                     .ifPresent(item::setSelectedProfile);
         }
+    }
+
+    private QuickBooksJobService.BatchValidationItemRequest toValidationRequest(BatchDraftItem item) {
+        return new QuickBooksJobService.BatchValidationItemRequest(
+                item.getPosition(),
+                item.getEntityType(),
+                item.getFileName(),
+                item.getBytes(),
+                item.getSelectedProfile() == null ? null : item.getSelectedProfile().id());
     }
 
     private Map<String, QuickBooksInvoiceRef> draftInvoiceRefsForBatch(BatchDraftItem targetItem) {
@@ -373,9 +439,14 @@ public class BatchImportView extends VerticalLayout {
         items.clear();
         selectedItem = null;
         activeBatchId = null;
+        trackingBatchId = null;
+        validationJobId = null;
         dependencySummary.setText("Upload one or more CSV files to build a batch.");
         refreshGrid();
         refreshDetailPanel();
+        progressSummary.setText("No live batch is running.");
+        progressDetails.setVisible(false);
+        progressBar.setVisible(false);
     }
 
     private EntityType detectEntityType(String fileName, List<String> headers) {
@@ -425,6 +496,122 @@ public class BatchImportView extends VerticalLayout {
     private void notifyWarning(String message) {
         Notification notification = Notification.show(message);
         notification.addThemeVariants(NotificationVariant.LUMO_WARNING);
+    }
+
+    private void refreshBatchProgress() {
+        if (trackingBatchId == null) {
+            return;
+        }
+        importProgressService.findBatchProgress(trackingBatchId).ifPresent(snapshot -> {
+            progressBar.setVisible(true);
+            progressDetails.setVisible(true);
+            progressBar.setIndeterminate(false);
+            progressBar.setValue(snapshot.progressValue());
+            progressSummary.setText("Batch #" + snapshot.batchId() + " is " + snapshot.status() + " | " + snapshot.percentLabel());
+            String currentWork = snapshot.currentFileName() == null
+                    ? "Preparing work queue"
+                    : snapshot.currentEntityLabel() + " | " + snapshot.currentFileName();
+            progressDetails.setText(snapshot.processedRows() + "/" + snapshot.plannedRunnableRows() + " runnable rows"
+                    + " | completed files=" + snapshot.completedFiles() + "/" + snapshot.runnableFiles()
+                    + " | " + currentWork
+                    + " | " + snapshot.remainingLabel()
+                    + " | " + snapshot.throughputLabel()
+                    + " | " + snapshot.startedLabel());
+            refreshBatchRunRows();
+            if (snapshot.status() != com.example.quickbooksimporter.domain.ImportBatchStatus.RUNNING) {
+                dependencySummary.setText("Batch " + snapshot.batchName() + " finished with status " + snapshot.status().name() + ".");
+                trackingBatchId = null;
+                stopPollingIfIdle();
+            }
+        });
+    }
+
+    private void refreshValidationJob() {
+        if (validationJobId != null) {
+            appJobService.findSnapshot(validationJobId).ifPresent(this::applyValidationSnapshot);
+        }
+    }
+
+    private void applyValidationSnapshot(AppJobSnapshot snapshot) {
+        progressBar.setVisible(true);
+        progressDetails.setVisible(true);
+        if (snapshot.status() == AppJobStatus.QUEUED || snapshot.status() == AppJobStatus.RUNNING) {
+            progressBar.setIndeterminate(false);
+            progressBar.setValue(snapshot.progressValue());
+            progressSummary.setText(snapshot.description() + " is " + snapshot.status() + " | " + snapshot.percentLabel());
+            progressDetails.setText(snapshot.summaryMessage());
+            return;
+        }
+        validateAllButton.setEnabled(true);
+        validateSelectedButton.setEnabled(true);
+        if (snapshot.status() == AppJobStatus.FAILED) {
+            progressBar.setValue(0d);
+            progressSummary.setText("Validation failed");
+            progressDetails.setText(snapshot.summaryMessage());
+            notifyWarning("Validation failed: " + snapshot.summaryMessage());
+            validationJobId = null;
+            stopPollingIfIdle();
+            return;
+        }
+        BatchValidationJobResult result = appJobService.readResult(snapshot.resultPayload(), BatchValidationJobResult.class);
+        result.items().forEach(this::applyValidationResult);
+        dependencySummary.setText(result.dependencyWarnings().isEmpty()
+                ? "All validations completed. Files with invalid rows remain blocked, valid independent files can run."
+                : String.join(" | ", result.dependencyWarnings()));
+        refreshGrid();
+        refreshDetailPanel();
+        progressBar.setValue(1d);
+        progressSummary.setText("Validation finished");
+        progressDetails.setText(snapshot.summaryMessage());
+        notifySuccess(snapshot.summaryMessage());
+        validationJobId = null;
+        stopPollingIfIdle();
+    }
+
+    private void applyValidationResult(BatchValidationJobResult.BatchValidationItemResult result) {
+        items.stream()
+                .filter(item -> item.getPosition() == result.position())
+                .findFirst()
+                .ifPresent(item -> {
+                    ImportPreviewSummary summary = importPreviewJobCodec.toSummary(result.previewResult(), result.suggestedProfileName());
+                    item.setPreviewSummary(summary);
+                    item.setStatusText(summary.runStatusSummary(
+                            skipInvalidRows.getValue() ? com.example.quickbooksimporter.service.ImportExecutionMode.IMPORT_READY_ONLY
+                                    : com.example.quickbooksimporter.service.ImportExecutionMode.STRICT_ALL_ROWS).name());
+                    item.setRowSummary(summary.totalRows() + " total / " + summary.readyRows() + " ready / " + summary.invalidRows() + " invalid");
+                    item.setWarningText(summary.warnings().isEmpty() ? "Validated." : String.join(" | ", summary.warnings()));
+                    if (item.getSelectedProfile() == null && result.suggestedProfileName() != null) {
+                        workflowFacade.listProfiles(item.getEntityType()).stream()
+                                .filter(candidate -> candidate.name().equals(result.suggestedProfileName()))
+                                .findFirst()
+                                .ifPresent(item::setSelectedProfile);
+                    }
+                });
+    }
+
+    private void stopPollingIfIdle() {
+        if (validationJobId == null && trackingBatchId == null) {
+            getUI().ifPresent(ui -> ui.setPollInterval(-1));
+        }
+    }
+
+    private void refreshBatchRunRows() {
+        if (trackingBatchId == null) {
+            return;
+        }
+        List<ImportRunEntity> runs = importHistoryService.runsForBatch(trackingBatchId);
+        runs.forEach(run -> items.stream()
+                .filter(candidate -> Objects.equals(candidate.getFileName(), run.getSourceFileName()))
+                .findFirst()
+                .ifPresent(item -> {
+                    item.setRunStatusText(run.getStatus().name());
+                    item.setRunId(run.getId());
+                    item.setWarningText("attempted=" + run.getAttemptedRows()
+                            + ", imported=" + run.getImportedRows()
+                            + ", skipped=" + run.getSkippedRows());
+                }));
+        refreshGrid();
+        refreshDetailPanel();
     }
 
     public static class BatchDraftItem {

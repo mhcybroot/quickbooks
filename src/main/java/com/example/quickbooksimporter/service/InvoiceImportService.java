@@ -16,6 +16,7 @@ import com.example.quickbooksimporter.repository.ImportRunRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.ByteArrayInputStream;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -63,14 +64,14 @@ public class InvoiceImportService {
     }
 
     public ImportPreview preview(String fileName, byte[] bytes, Map<NormalizedInvoiceField, String> mapping) {
-        return preview(fileName, bytes, mapping, false, DateFormatOption.AUTO);
+        return preview(fileName, bytes, mapping, false, DateFormatOption.AUTO, PreviewProgressListener.noop());
     }
 
     public ImportPreview preview(String fileName,
                                  byte[] bytes,
                                  Map<NormalizedInvoiceField, String> mapping,
                                  boolean groupingEnabled) {
-        return preview(fileName, bytes, mapping, groupingEnabled, DateFormatOption.AUTO);
+        return preview(fileName, bytes, mapping, groupingEnabled, DateFormatOption.AUTO, PreviewProgressListener.noop());
     }
 
     public ImportPreview preview(String fileName,
@@ -78,12 +79,22 @@ public class InvoiceImportService {
                                  Map<NormalizedInvoiceField, String> mapping,
                                  boolean groupingEnabled,
                                  DateFormatOption dateFormatOption) {
+        return preview(fileName, bytes, mapping, groupingEnabled, dateFormatOption, PreviewProgressListener.noop());
+    }
+
+    public ImportPreview preview(String fileName,
+                                 byte[] bytes,
+                                 Map<NormalizedInvoiceField, String> mapping,
+                                 boolean groupingEnabled,
+                                 DateFormatOption dateFormatOption,
+                                 PreviewProgressListener progressListener) {
         ParsedCsvDocument document = parser.parse(new ByteArrayInputStream(bytes));
         Map<NormalizedInvoiceField, String> finalMapping = new EnumMap<>(mapping);
         DateFormatOption effective = dateFormatOption == null ? DateFormatOption.AUTO : dateFormatOption;
+        PreviewProgressListener listener = progressListener == null ? PreviewProgressListener.noop() : progressListener;
         List<RowValidationResult> validations = groupingEnabled
-                ? validateGrouped(document, finalMapping, effective)
-                : document.rows().stream().map(row -> validateRow(row, finalMapping, effective)).toList();
+                ? validateGrouped(document, finalMapping, effective, listener)
+                : validateUngrouped(document, finalMapping, effective, listener);
         List<ImportPreviewRow> rows = validations.stream()
                 .map(result -> new ImportPreviewRow(
                         result.rowNumber(),
@@ -141,10 +152,19 @@ public class InvoiceImportService {
         run.setCreatedAt(Instant.now());
         run.setCompany(connectionService.requireCurrentCompany());
         run.setExportCsv(preview.exportCsv());
+        run.setTotalRows(preview.rows().size());
+        run.setValidRows((int) readyRows);
+        run.setInvalidRows((int) preview.validations().stream().filter(result -> result.status() == ImportRowStatus.INVALID).count());
+        run.setDuplicateRows((int) preview.validations().stream().filter(result -> result.status() == ImportRowStatus.DUPLICATE).count());
+        run.setAttemptedRows(0);
+        run.setSkippedRows(0);
+        run.setImportedRows(0);
         applyExecutionOptions(run, options);
         run = importRunRepository.save(run);
 
         int processedSinceFlush = 0;
+        Instant lastFlushAt = Instant.now();
+        List<PreparedInvoiceCreate> prepared = new ArrayList<>();
         for (RowValidationResult validation : preview.validations()) {
             ImportRowResultEntity rowEntity = buildRow(run, validation);
             if (mode == ImportExecutionMode.IMPORT_READY_ONLY && validation.status() != ImportRowStatus.READY) {
@@ -153,38 +173,59 @@ public class InvoiceImportService {
                 run.getRowResults().add(rowEntity);
                 skipped++;
                 processedSinceFlush++;
-                if (processedSinceFlush >= 25) {
-                    run.setAttemptedRows(attempted);
-                    run.setSkippedRows(skipped);
-                    run.setImportedRows(imported);
-                    importRunRepository.save(run);
+                ImportRunProgressFlusher.ProgressFlushResult flushResult = flushProgress(
+                        run, attempted, skipped, imported, processedSinceFlush, lastFlushAt);
+                lastFlushAt = flushResult.lastFlushAt();
+                if (flushResult.flushed()) {
                     processedSinceFlush = 0;
                 }
                 continue;
             }
+            run.getRowResults().add(rowEntity);
+            attempted++;
             try {
-                attempted++;
                 NormalizedInvoice invoice = validation.invoice();
                 invoice.lines().forEach(line -> quickBooksGateway.ensureServiceItem(realmId, line.itemName(), line.description()));
                 quickBooksGateway.ensureCustomer(realmId, invoice.customer());
-                QuickBooksInvoiceCreateResult created = quickBooksGateway.createInvoice(realmId, invoice);
-                rowEntity.setStatus(ImportRowStatus.IMPORTED);
-                rowEntity.setCreatedEntityId(created.invoiceId());
-                rowEntity.setMessage("Imported as QuickBooks invoice " + created.docNumber());
-                imported++;
+                prepared.add(new PreparedInvoiceCreate(invoice, rowEntity));
             } catch (Exception exception) {
                 rowEntity.setStatus(ImportRowStatus.FAILED);
                 rowEntity.setMessage(exception.getMessage());
                 failed++;
+                processedSinceFlush++;
+                ImportRunProgressFlusher.ProgressFlushResult flushResult = flushProgress(
+                        run, attempted, skipped, imported, processedSinceFlush, lastFlushAt);
+                lastFlushAt = flushResult.lastFlushAt();
+                if (flushResult.flushed()) {
+                    processedSinceFlush = 0;
+                }
             }
-            run.getRowResults().add(rowEntity);
-            processedSinceFlush++;
-            if (processedSinceFlush >= 25) {
-                run.setAttemptedRows(attempted);
-                run.setSkippedRows(skipped);
-                run.setImportedRows(imported);
-                importRunRepository.save(run);
-                processedSinceFlush = 0;
+        }
+        if (!prepared.isEmpty()) {
+            List<QuickBooksBatchCreateResult> results = quickBooksGateway.createInvoicesBatch(
+                    realmId,
+                    prepared.stream().map(PreparedInvoiceCreate::invoice).toList());
+            for (int index = 0; index < prepared.size(); index++) {
+                PreparedInvoiceCreate item = prepared.get(index);
+                QuickBooksBatchCreateResult result = results.get(index);
+                if (result.success()) {
+                    item.row().setStatus(ImportRowStatus.IMPORTED);
+                    item.row().setCreatedEntityId(result.entityId());
+                    String label = result.referenceNumber() == null ? item.invoice().invoiceNo() : result.referenceNumber();
+                    item.row().setMessage("Imported as QuickBooks invoice " + label);
+                    imported++;
+                } else {
+                    item.row().setStatus(ImportRowStatus.FAILED);
+                    item.row().setMessage(result.message());
+                    failed++;
+                }
+                processedSinceFlush++;
+                ImportRunProgressFlusher.ProgressFlushResult flushResult = flushProgress(
+                        run, attempted, skipped, imported, processedSinceFlush, lastFlushAt);
+                lastFlushAt = flushResult.lastFlushAt();
+                if (flushResult.flushed()) {
+                    processedSinceFlush = 0;
+                }
             }
         }
         run.setTotalRows(preview.rows().size());
@@ -222,9 +263,28 @@ public class InvoiceImportService {
         }
     }
 
+    private List<RowValidationResult> validateUngrouped(ParsedCsvDocument document,
+                                                        Map<NormalizedInvoiceField, String> mapping,
+                                                        DateFormatOption dateFormatOption,
+                                                        PreviewProgressListener progressListener) {
+        List<RowValidationResult> validations = new ArrayList<>();
+        int totalRows = document.rows().size();
+        int completed = 0;
+        if (totalRows > 0) {
+            progressListener.onProgress(0, totalRows, "Validated 0/" + totalRows + " invoice rows");
+        }
+        for (var row : document.rows()) {
+            validations.add(validateRow(row, mapping, dateFormatOption));
+            completed++;
+            progressListener.onProgress(completed, totalRows, "Validated " + completed + "/" + totalRows + " invoice rows");
+        }
+        return validations;
+    }
+
     private List<RowValidationResult> validateGrouped(ParsedCsvDocument document,
                                                       Map<NormalizedInvoiceField, String> mapping,
-                                                      DateFormatOption dateFormatOption) {
+                                                      DateFormatOption dateFormatOption,
+                                                      PreviewProgressListener progressListener) {
         Map<String, List<GroupedInvoiceSource>> groups = new HashMap<>();
         List<RowValidationResult> validations = new ArrayList<>();
         for (var row : document.rows()) {
@@ -236,6 +296,11 @@ public class InvoiceImportService {
             } catch (Exception exception) {
                 validations.add(new RowValidationResult(row.rowNumber(), row, null, ImportRowStatus.INVALID, exception.getMessage(), row.values()));
             }
+        }
+        int totalGroups = groups.size() + validations.size();
+        int completedGroups = validations.size();
+        if (totalGroups > 0) {
+            progressListener.onProgress(completedGroups, totalGroups, "Validated " + completedGroups + "/" + totalGroups + " invoice groups");
         }
 
         for (List<GroupedInvoiceSource> group : groups.values()) {
@@ -274,6 +339,8 @@ public class InvoiceImportService {
                         validation.rawData());
             }
             validations.add(validation);
+            completedGroups++;
+            progressListener.onProgress(completedGroups, totalGroups, "Validated " + completedGroups + "/" + totalGroups + " invoice groups");
         }
         validations.sort(Comparator.comparingInt(RowValidationResult::rowNumber));
         return validations;
@@ -386,6 +453,25 @@ public class InvoiceImportService {
             return primary;
         }
         return primary + "; " + secondary;
+    }
+
+    private ImportRunProgressFlusher.ProgressFlushResult flushProgress(ImportRunEntity run,
+                                                                       int attempted,
+                                                                       int skipped,
+                                                                       int imported,
+                                                                       int processedSinceFlush,
+                                                                       Instant lastFlushAt) {
+        return ImportRunProgressFlusher.flushProgress(
+                importRunRepository,
+                run,
+                attempted,
+                skipped,
+                imported,
+                processedSinceFlush,
+                lastFlushAt);
+    }
+
+    private record PreparedInvoiceCreate(NormalizedInvoice invoice, ImportRowResultEntity row) {
     }
 
     private record GroupedInvoiceSource(int rowNumber, Map<String, String> rawData, NormalizedInvoice invoice) {

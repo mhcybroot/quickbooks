@@ -15,16 +15,19 @@ import java.math.BigDecimal;
 import java.net.URI;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
@@ -33,6 +36,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 @Service
 public class QuickBooksApiGateway implements QuickBooksGateway {
     private static final Logger log = LoggerFactory.getLogger(QuickBooksApiGateway.class);
+    static final int QBO_BATCH_MAX_ITEMS = 10;
 
     private final QuickBooksProperties properties;
     private final QuickBooksConnectionService connectionService;
@@ -167,12 +171,14 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
 
     @Override
     public QuickBooksInvoiceCreateResult createInvoice(String realmId, NormalizedInvoice invoice) {
-        Map<String, Object> payload = payloadFactory.build(
-                invoice,
-                findCustomerRef(realmId, invoice.customer()),
-                line -> findItemRef(realmId, line.itemName()));
+        Map<String, Object> payload = buildInvoicePayload(realmId, invoice);
         InvoiceResponse response = post(realmId, "/v3/company/" + realmId + "/invoice", payload, InvoiceResponse.class);
         return new QuickBooksInvoiceCreateResult(response.invoice().id(), response.invoice().docNumber());
+    }
+
+    @Override
+    public List<QuickBooksBatchCreateResult> createInvoicesBatch(String realmId, List<NormalizedInvoice> invoices) {
+        return executeBatchCreate(realmId, "Invoice", invoices, invoice -> buildInvoicePayload(realmId, invoice));
     }
 
     @Override
@@ -210,6 +216,162 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
 
     @Override
     public QuickBooksPaymentCreateResult createPayment(String realmId, NormalizedPayment payment, QuickBooksInvoiceRef invoiceRef) {
+        java.util.Map<String, Object> payload = buildPaymentPayload(realmId, payment, invoiceRef);
+        PaymentResponse response = post(realmId, "/v3/company/" + realmId + "/payment", payload, PaymentResponse.class);
+        return new QuickBooksPaymentCreateResult(response.payment().id(), response.payment().docNumber());
+    }
+
+    @Override
+    public List<QuickBooksBatchCreateResult> createPaymentsBatch(String realmId, List<QuickBooksPaymentBatchCreateRequest> payments) {
+        return executeBatchCreate(realmId, "Payment", payments, request -> buildPaymentPayload(realmId, request.payment(), request.invoiceRef()));
+    }
+
+    @Override
+    public boolean expenseExists(String realmId, String vendorName, LocalDate txnDate, BigDecimal amount, String referenceNo) {
+        if (txnDate == null || amount == null || referenceNo == null) {
+            return false;
+        }
+        String query = "select Id from Purchase where TxnDate = '" + txnDate + "'"
+                + " and TotalAmt = '" + amount + "'"
+                + " and DocNumber = '" + qbLiteral(referenceNo) + "'";
+        QueryResponse response = query(realmId, query);
+        return response.queryResponse() != null && response.queryResponse().containsKey("Purchase");
+    }
+
+    @Override
+    public QuickBooksExpenseCreateResult createExpense(String realmId, NormalizedExpense expense) {
+        java.util.Map<String, Object> payload = buildExpensePayload(realmId, expense);
+        PurchaseResponse response = post(realmId, "/v3/company/" + realmId + "/purchase", payload, PurchaseResponse.class);
+        return new QuickBooksExpenseCreateResult(response.purchase().id(), response.purchase().docNumber());
+    }
+
+    @Override
+    public List<QuickBooksBatchCreateResult> createExpensesBatch(String realmId, List<NormalizedExpense> expenses) {
+        return executeBatchCreate(realmId, "Purchase", expenses, expense -> buildExpensePayload(realmId, expense));
+    }
+
+    @Override
+    public boolean salesReceiptExistsByDocNumber(String realmId, String docNumber) {
+        if (docNumber == null) {
+            return false;
+        }
+        QueryResponse response = query(realmId, "select Id from SalesReceipt where DocNumber = '" + qbLiteral(docNumber) + "'");
+        return response.queryResponse() != null && response.queryResponse().containsKey("SalesReceipt");
+    }
+
+    @Override
+    public void ensurePaymentMethod(String realmId, String paymentMethodName) {
+        if (StringUtils.isBlank(paymentMethodName)) {
+            return;
+        }
+        String existing = findPaymentMethodIdByName(realmId, paymentMethodName);
+        if (existing != null) {
+            return;
+        }
+        post(realmId, "/v3/company/" + realmId + "/paymentmethod",
+                Map.of("Name", paymentMethodName, "Type", "NON_CREDIT_CARD"));
+    }
+
+    @Override
+    public QuickBooksSalesReceiptCreateResult createSalesReceipt(String realmId, NormalizedSalesReceipt receipt) {
+        java.util.Map<String, Object> payload = buildSalesReceiptPayload(realmId, receipt);
+        SalesReceiptResponse response = post(realmId, "/v3/company/" + realmId + "/salesreceipt", payload, SalesReceiptResponse.class);
+        return new QuickBooksSalesReceiptCreateResult(response.salesReceipt().id(), response.salesReceipt().docNumber());
+    }
+
+    @Override
+    public List<QuickBooksBatchCreateResult> createSalesReceiptsBatch(String realmId, List<NormalizedSalesReceipt> receipts) {
+        return executeBatchCreate(realmId, "SalesReceipt", receipts, receipt -> buildSalesReceiptPayload(realmId, receipt));
+    }
+
+    @Override
+    public boolean billExistsByDocNumber(String realmId, String docNumber) {
+        if (docNumber == null) {
+            return false;
+        }
+        QueryResponse response = query(realmId, "select Id from Bill where DocNumber = '" + qbLiteral(docNumber) + "'");
+        return response.queryResponse() != null && response.queryResponse().containsKey("Bill");
+    }
+
+    @Override
+    public QuickBooksBillRef findBillByDocNumber(String realmId, String billNo) {
+        QueryResponse response = query(realmId, "select Id, DocNumber, Balance, VendorRef from Bill where DocNumber = '" + qbLiteral(billNo) + "'");
+        List<Map<String, Object>> bills = castList(response.queryResponse(), "Bill");
+        if (bills.isEmpty()) {
+            return null;
+        }
+        Map<String, Object> bill = bills.getFirst();
+        Map<String, Object> vendorRef = castMap(bill.get("VendorRef"));
+        return new QuickBooksBillRef(
+                String.valueOf(bill.get("Id")),
+                String.valueOf(bill.get("DocNumber")),
+                vendorRef == null ? null : String.valueOf(vendorRef.get("value")),
+                vendorRef == null ? null : String.valueOf(vendorRef.get("name")),
+                toBigDecimal(bill.get("Balance")));
+    }
+
+    @Override
+    public boolean billPaymentExists(String realmId, String vendorName, LocalDate paymentDate, String referenceNo, BigDecimal amount) {
+        if (vendorName == null || paymentDate == null || referenceNo == null || amount == null) {
+            return false;
+        }
+        String vendorId = findVendorId(realmId, vendorName);
+        if (vendorId == null) {
+            return false;
+        }
+        String query = "select Id from BillPayment where VendorRef = '" + qbLiteral(vendorId) + "'"
+                + " and TxnDate = '" + paymentDate + "'"
+                + " and TotalAmt = '" + amount + "'"
+                + " and DocNumber = '" + qbLiteral(referenceNo) + "'";
+        QueryResponse response = query(realmId, query);
+        return response.queryResponse() != null && response.queryResponse().containsKey("BillPayment");
+    }
+
+    @Override
+    public QuickBooksBillCreateResult createBill(String realmId, NormalizedBill bill) {
+        java.util.Map<String, Object> payload = buildBillPayload(realmId, bill);
+        BillResponse response = post(realmId, "/v3/company/" + realmId + "/bill", payload, BillResponse.class);
+        return new QuickBooksBillCreateResult(response.bill().id(), response.bill().docNumber());
+    }
+
+    @Override
+    public List<QuickBooksBatchCreateResult> createBillsBatch(String realmId, List<NormalizedBill> bills) {
+        return executeBatchCreate(realmId, "Bill", bills, bill -> buildBillPayload(realmId, bill));
+    }
+
+    @Override
+    public QuickBooksPaymentCreateResult createBillPayment(String realmId, NormalizedBillPayment payment, QuickBooksBillRef billRef) {
+        java.util.Map<String, Object> payload = buildBillPaymentPayload(realmId, payment, billRef);
+        BillPaymentResponse response = post(realmId, "/v3/company/" + realmId + "/billpayment", payload, BillPaymentResponse.class);
+        return new QuickBooksPaymentCreateResult(response.billPayment().id(), response.billPayment().docNumber());
+    }
+
+    @Override
+    public List<QuickBooksBatchCreateResult> createBillPaymentsBatch(String realmId, List<QuickBooksBillPaymentBatchCreateRequest> payments) {
+        return executeBatchCreate(realmId, "BillPayment", payments, request -> buildBillPaymentPayload(realmId, request.payment(), request.billRef()));
+    }
+
+    @Override
+    public List<QboTransactionRow> listTransactions(String realmId,
+                                                    QboCleanupEntityType type,
+                                                    QboCleanupFilter filter,
+                                                    Integer startPosition) {
+        int page = filter == null || filter.pageSize() <= 0 ? 200 : filter.pageSize();
+        int offset = startPosition == null || startPosition < 1 ? 1 : startPosition;
+        String query = buildCleanupListQuery(type, filter, offset, page);
+        QueryResponse response = query(realmId, query);
+        List<Map<String, Object>> rows = castList(response.queryResponse(), type.qboEntityName());
+        return rows.stream().map(row -> toCleanupRow(type, row)).toList();
+    }
+
+    Map<String, Object> buildInvoicePayload(String realmId, NormalizedInvoice invoice) {
+        return payloadFactory.build(
+                invoice,
+                findCustomerRef(realmId, invoice.customer()),
+                line -> findItemRef(realmId, line.itemName()));
+    }
+
+    Map<String, Object> buildPaymentPayload(String realmId, NormalizedPayment payment, QuickBooksInvoiceRef invoiceRef) {
         String customerId = invoiceRef.customerId() != null ? invoiceRef.customerId() : findCustomerId(realmId, payment.customer());
         if (customerId == null) {
             throw new IllegalStateException("Customer not found in QuickBooks: " + payment.customer());
@@ -238,25 +400,10 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
                 "LinkedTxn", List.of(Map.of(
                         "TxnId", invoiceRef.invoiceId(),
                         "TxnType", "Invoice")))));
-
-        PaymentResponse response = post(realmId, "/v3/company/" + realmId + "/payment", payload, PaymentResponse.class);
-        return new QuickBooksPaymentCreateResult(response.payment().id(), response.payment().docNumber());
+        return payload;
     }
 
-    @Override
-    public boolean expenseExists(String realmId, String vendorName, LocalDate txnDate, BigDecimal amount, String referenceNo) {
-        if (txnDate == null || amount == null || referenceNo == null) {
-            return false;
-        }
-        String query = "select Id from Purchase where TxnDate = '" + txnDate + "'"
-                + " and TotalAmt = '" + amount + "'"
-                + " and DocNumber = '" + qbLiteral(referenceNo) + "'";
-        QueryResponse response = query(realmId, query);
-        return response.queryResponse() != null && response.queryResponse().containsKey("Purchase");
-    }
-
-    @Override
-    public QuickBooksExpenseCreateResult createExpense(String realmId, NormalizedExpense expense) {
+    Map<String, Object> buildExpensePayload(String realmId, NormalizedExpense expense) {
         String vendorId = findVendorId(realmId, expense.vendor());
         if (vendorId == null) {
             throw new IllegalStateException("Vendor not found in QuickBooks: " + expense.vendor());
@@ -282,34 +429,10 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
                 "Description", expense.description() == null ? "" : expense.description(),
                 "DetailType", "AccountBasedExpenseLineDetail",
                 "AccountBasedExpenseLineDetail", Map.of("AccountRef", Map.of("value", categoryAccountId)))));
-        PurchaseResponse response = post(realmId, "/v3/company/" + realmId + "/purchase", payload, PurchaseResponse.class);
-        return new QuickBooksExpenseCreateResult(response.purchase().id(), response.purchase().docNumber());
+        return payload;
     }
 
-    @Override
-    public boolean salesReceiptExistsByDocNumber(String realmId, String docNumber) {
-        if (docNumber == null) {
-            return false;
-        }
-        QueryResponse response = query(realmId, "select Id from SalesReceipt where DocNumber = '" + qbLiteral(docNumber) + "'");
-        return response.queryResponse() != null && response.queryResponse().containsKey("SalesReceipt");
-    }
-
-    @Override
-    public void ensurePaymentMethod(String realmId, String paymentMethodName) {
-        if (StringUtils.isBlank(paymentMethodName)) {
-            return;
-        }
-        String existing = findPaymentMethodIdByName(realmId, paymentMethodName);
-        if (existing != null) {
-            return;
-        }
-        post(realmId, "/v3/company/" + realmId + "/paymentmethod",
-                Map.of("Name", paymentMethodName, "Type", "NON_CREDIT_CARD"));
-    }
-
-    @Override
-    public QuickBooksSalesReceiptCreateResult createSalesReceipt(String realmId, NormalizedSalesReceipt receipt) {
+    Map<String, Object> buildSalesReceiptPayload(String realmId, NormalizedSalesReceipt receipt) {
         String customerId = findCustomerId(realmId, receipt.customer());
         if (customerId == null) {
             throw new IllegalStateException("Customer not found in QuickBooks: " + receipt.customer());
@@ -359,55 +482,10 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
                 payload.put("PaymentMethodRef", Map.of("value", methodId));
             }
         }
-        SalesReceiptResponse response = post(realmId, "/v3/company/" + realmId + "/salesreceipt", payload, SalesReceiptResponse.class);
-        return new QuickBooksSalesReceiptCreateResult(response.salesReceipt().id(), response.salesReceipt().docNumber());
+        return payload;
     }
 
-    @Override
-    public boolean billExistsByDocNumber(String realmId, String docNumber) {
-        if (docNumber == null) {
-            return false;
-        }
-        QueryResponse response = query(realmId, "select Id from Bill where DocNumber = '" + qbLiteral(docNumber) + "'");
-        return response.queryResponse() != null && response.queryResponse().containsKey("Bill");
-    }
-
-    @Override
-    public QuickBooksBillRef findBillByDocNumber(String realmId, String billNo) {
-        QueryResponse response = query(realmId, "select Id, DocNumber, Balance, VendorRef from Bill where DocNumber = '" + qbLiteral(billNo) + "'");
-        List<Map<String, Object>> bills = castList(response.queryResponse(), "Bill");
-        if (bills.isEmpty()) {
-            return null;
-        }
-        Map<String, Object> bill = bills.getFirst();
-        Map<String, Object> vendorRef = castMap(bill.get("VendorRef"));
-        return new QuickBooksBillRef(
-                String.valueOf(bill.get("Id")),
-                String.valueOf(bill.get("DocNumber")),
-                vendorRef == null ? null : String.valueOf(vendorRef.get("value")),
-                vendorRef == null ? null : String.valueOf(vendorRef.get("name")),
-                toBigDecimal(bill.get("Balance")));
-    }
-
-    @Override
-    public boolean billPaymentExists(String realmId, String vendorName, LocalDate paymentDate, String referenceNo, BigDecimal amount) {
-        if (vendorName == null || paymentDate == null || referenceNo == null || amount == null) {
-            return false;
-        }
-        String vendorId = findVendorId(realmId, vendorName);
-        if (vendorId == null) {
-            return false;
-        }
-        String query = "select Id from BillPayment where VendorRef = '" + qbLiteral(vendorId) + "'"
-                + " and TxnDate = '" + paymentDate + "'"
-                + " and TotalAmt = '" + amount + "'"
-                + " and DocNumber = '" + qbLiteral(referenceNo) + "'";
-        QueryResponse response = query(realmId, query);
-        return response.queryResponse() != null && response.queryResponse().containsKey("BillPayment");
-    }
-
-    @Override
-    public QuickBooksBillCreateResult createBill(String realmId, NormalizedBill bill) {
+    Map<String, Object> buildBillPayload(String realmId, NormalizedBill bill) {
         String vendorId = findVendorId(realmId, bill.vendor());
         if (vendorId == null) {
             throw new IllegalStateException("Vendor not found in QuickBooks: " + bill.vendor());
@@ -455,12 +533,10 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
         payload.put("DueDate", bill.dueDate() == null ? null : String.valueOf(bill.dueDate()));
         payload.put("DocNumber", bill.billNo());
         payload.put("Line", lines);
-        BillResponse response = post(realmId, "/v3/company/" + realmId + "/bill", payload, BillResponse.class);
-        return new QuickBooksBillCreateResult(response.bill().id(), response.bill().docNumber());
+        return payload;
     }
 
-    @Override
-    public QuickBooksPaymentCreateResult createBillPayment(String realmId, NormalizedBillPayment payment, QuickBooksBillRef billRef) {
+    Map<String, Object> buildBillPaymentPayload(String realmId, NormalizedBillPayment payment, QuickBooksBillRef billRef) {
         String vendorId = billRef.vendorId() != null ? billRef.vendorId() : findVendorId(realmId, payment.vendor());
         if (vendorId == null) {
             throw new IllegalStateException("Vendor not found in QuickBooks: " + payment.vendor());
@@ -479,21 +555,123 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
         payload.put("Line", List.of(Map.of(
                 "Amount", payment.application().appliedAmount(),
                 "LinkedTxn", List.of(Map.of("TxnId", billRef.billId(), "TxnType", "Bill")))));
-        BillPaymentResponse response = post(realmId, "/v3/company/" + realmId + "/billpayment", payload, BillPaymentResponse.class);
-        return new QuickBooksPaymentCreateResult(response.billPayment().id(), response.billPayment().docNumber());
+        return payload;
     }
 
-    @Override
-    public List<QboTransactionRow> listTransactions(String realmId,
-                                                    QboCleanupEntityType type,
-                                                    QboCleanupFilter filter,
-                                                    Integer startPosition) {
-        int page = filter == null || filter.pageSize() <= 0 ? 200 : filter.pageSize();
-        int offset = startPosition == null || startPosition < 1 ? 1 : startPosition;
-        String query = buildCleanupListQuery(type, filter, offset, page);
-        QueryResponse response = query(realmId, query);
-        List<Map<String, Object>> rows = castList(response.queryResponse(), type.qboEntityName());
-        return rows.stream().map(row -> toCleanupRow(type, row)).toList();
+    <T> List<QuickBooksBatchCreateResult> executeBatchCreate(String realmId,
+                                                             String entityName,
+                                                             List<T> requests,
+                                                             Function<T, Map<String, Object>> payloadBuilder) {
+        if (requests == null || requests.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> payloads = requests.stream().map(payloadBuilder).toList();
+        List<List<BatchItemRequest>> chunks = buildCreateBatchChunks(entityName, payloads);
+        List<QuickBooksBatchCreateResult> results = new ArrayList<>(requests.size());
+        int offset = 0;
+        for (List<BatchItemRequest> chunk : chunks) {
+            log.info("QuickBooks batch create start: realmId={}, entityType={}, chunkSize={}", realmId, entityName, chunk.size());
+            try {
+                BatchResponseEnvelope envelope = postBatch(realmId, chunk);
+                List<QuickBooksBatchCreateResult> chunkResults = mapBatchCreateResults(entityName, chunk, envelope.response(), envelope.intuitTid());
+                chunkResults.stream()
+                        .filter(result -> !result.success())
+                        .forEach(result -> log.warn("QuickBooks batch item failed: realmId={}, entityType={}, chunkSize={}, intuit_tid={}, message={}",
+                                realmId, entityName, chunk.size(), result.intuitTid(), result.message()));
+                results.addAll(chunkResults);
+            } catch (RestClientResponseException ex) {
+                String intuitTid = extractIntuitTid(ex);
+                log.error("QuickBooks batch create failed: realmId={}, entityType={}, chunkSize={}, intuit_tid={}, status={}, body={}",
+                        realmId, entityName, chunk.size(), intuitTid, ex.getStatusCode(), ex.getResponseBodyAsString(), ex);
+                for (int index = 0; index < chunk.size(); index++) {
+                    results.add(new QuickBooksBatchCreateResult(false, null, null, extractQboMessage(ex), intuitTid));
+                }
+            }
+            offset += chunk.size();
+        }
+        return results;
+    }
+
+    List<List<BatchItemRequest>> buildCreateBatchChunks(String entityName, List<Map<String, Object>> payloads) {
+        List<BatchItemRequest> items = new ArrayList<>(payloads.size());
+        for (int index = 0; index < payloads.size(); index++) {
+            items.add(new BatchItemRequest(String.valueOf(index + 1), "create", Map.of(entityName, payloads.get(index))));
+        }
+        List<List<BatchItemRequest>> chunks = new ArrayList<>();
+        for (int start = 0; start < items.size(); start += QBO_BATCH_MAX_ITEMS) {
+            chunks.add(List.copyOf(items.subList(start, Math.min(start + QBO_BATCH_MAX_ITEMS, items.size()))));
+        }
+        return chunks;
+    }
+
+    List<QuickBooksBatchCreateResult> mapBatchCreateResults(String entityName,
+                                                            List<BatchItemRequest> chunk,
+                                                            BatchResponse response,
+                                                            String intuitTid) {
+        Map<String, Map<String, Object>> byBatchId = new HashMap<>();
+        if (response != null && response.batchItemResponse() != null) {
+            for (Map<String, Object> item : response.batchItemResponse()) {
+                byBatchId.put(String.valueOf(item.get("bId")), item);
+            }
+        }
+        List<QuickBooksBatchCreateResult> results = new ArrayList<>(chunk.size());
+        for (BatchItemRequest request : chunk) {
+            Map<String, Object> item = byBatchId.get(request.bId());
+            results.add(toBatchCreateResult(entityName, item, intuitTid));
+        }
+        return results;
+    }
+
+    private BatchResponseEnvelope postBatch(String realmId, List<BatchItemRequest> items) {
+        String token = connectionService.getActiveConnection().getAccessToken();
+        URI uri = URI.create(connectionService.resolveBaseUrlForCurrentCompany() + "/v3/company/" + realmId + "/batch?minorversion=75");
+        ResponseEntity<BatchResponse> entity = restClient.post()
+                .uri(uri)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.APPLICATION_JSON)
+                .body(Map.of("BatchItemRequest", items))
+                .retrieve()
+                .toEntity(BatchResponse.class);
+        String intuitTid = entity.getHeaders().getFirst("intuit_tid");
+        return new BatchResponseEnvelope(entity.getBody(), intuitTid);
+    }
+
+    private QuickBooksBatchCreateResult toBatchCreateResult(String entityName, Map<String, Object> item, String intuitTid) {
+        if (item == null) {
+            return new QuickBooksBatchCreateResult(false, null, null, "QuickBooks batch response missing item result", intuitTid);
+        }
+        Map<String, Object> payload = castMap(item.get(entityName));
+        if (payload != null) {
+            return new QuickBooksBatchCreateResult(
+                    true,
+                    valueOrNull(payload.get("Id")),
+                    valueOrNull(payload.get("DocNumber")),
+                    null,
+                    intuitTid);
+        }
+        Map<String, Object> fault = castMap(item.get("Fault"));
+        return new QuickBooksBatchCreateResult(false, null, null, extractBatchFaultMessage(fault), intuitTid);
+    }
+
+    private String extractBatchFaultMessage(Map<String, Object> fault) {
+        if (fault == null) {
+            return "QuickBooks batch item failed";
+        }
+        List<Map<String, Object>> errors = castList(fault, "Error");
+        if (!errors.isEmpty()) {
+            Map<String, Object> error = errors.getFirst();
+            String message = valueOrNull(error.get("Message"));
+            String detail = valueOrNull(error.get("Detail"));
+            if (StringUtils.isBlank(message)) {
+                return detail == null ? "QuickBooks batch item failed" : detail;
+            }
+            if (StringUtils.isBlank(detail) || detail.equals(message)) {
+                return message;
+            }
+            return message + ": " + detail;
+        }
+        return valueOrNull(fault.get("type")) == null ? "QuickBooks batch item failed" : String.valueOf(fault.get("type"));
     }
 
     String buildCleanupListQuery(QboCleanupEntityType type, QboCleanupFilter filter, int startPosition, int maxResults) {
@@ -835,6 +1013,10 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
         return value == null ? "" : String.valueOf(value);
     }
 
+    private String valueOrNull(Object value) {
+        return value == null ? null : String.valueOf(value);
+    }
+
     @SuppressWarnings("unchecked")
     private boolean hasLinkedTxnId(Map<String, Object> row, String txnId) {
         Object linesObject = row.get("Line");
@@ -983,6 +1165,25 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
     }
 
     public record QueryResponse(@JsonAlias("QueryResponse") Map<String, Object> queryResponse) {
+    }
+
+    public record BatchResponse(@JsonAlias("BatchItemResponse") List<Map<String, Object>> batchItemResponse) {
+    }
+
+    record BatchResponseEnvelope(BatchResponse response, String intuitTid) {
+    }
+
+    record BatchItemRequest(@JsonAlias("bId") String bId,
+                            @JsonAlias("operation") String operation,
+                            @JsonAlias("payload") Map<String, Object> payload) {
+        @com.fasterxml.jackson.annotation.JsonAnyGetter
+        Map<String, Object> json() {
+            Map<String, Object> values = new LinkedHashMap<>();
+            values.put("bId", bId);
+            values.put("operation", operation);
+            values.putAll(payload);
+            return values;
+        }
     }
 
     public record InvoiceResponse(@JsonAlias("Invoice") InvoicePayload invoice) {

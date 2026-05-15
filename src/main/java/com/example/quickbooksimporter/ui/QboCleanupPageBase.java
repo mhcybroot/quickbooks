@@ -1,5 +1,6 @@
 package com.example.quickbooksimporter.ui;
 
+import com.example.quickbooksimporter.domain.AppJobStatus;
 import com.example.quickbooksimporter.service.QboCleanupEntityType;
 import com.example.quickbooksimporter.service.QboCleanupDryRunPlan;
 import com.example.quickbooksimporter.service.QboCleanupFilter;
@@ -7,6 +8,13 @@ import com.example.quickbooksimporter.service.QboCleanupSortField;
 import com.example.quickbooksimporter.service.QboCleanupRecoveryResult;
 import com.example.quickbooksimporter.service.QboCleanupResult;
 import com.example.quickbooksimporter.service.QboCleanupService;
+import com.example.quickbooksimporter.service.AppJobService;
+import com.example.quickbooksimporter.service.AppJobSnapshot;
+import com.example.quickbooksimporter.service.QboCleanupActionJobResult;
+import com.example.quickbooksimporter.service.QboCleanupRecoveryExecutionJobResult;
+import com.example.quickbooksimporter.service.QboCleanupRecoveryPlanJobResult;
+import com.example.quickbooksimporter.service.QboCleanupSearchJobResult;
+import com.example.quickbooksimporter.service.QuickBooksJobService;
 import com.example.quickbooksimporter.service.QboSortDirection;
 import com.example.quickbooksimporter.service.QboTransactionRow;
 import com.example.quickbooksimporter.ui.components.UiComponents;
@@ -27,6 +35,7 @@ import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.radiobutton.RadioButtonGroup;
 import com.vaadin.flow.component.textfield.TextField;
+import com.vaadin.flow.component.AttachEvent;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -35,6 +44,8 @@ public abstract class QboCleanupPageBase extends VerticalLayout {
 
     private final QboCleanupService cleanupService;
     private final QboCleanupEntityType entityType;
+    private final QuickBooksJobService quickBooksJobService;
+    private final AppJobService appJobService;
 
     private final DatePicker fromDate = new DatePicker("From Date");
     private final DatePicker toDate = new DatePicker("To Date");
@@ -56,9 +67,19 @@ public abstract class QboCleanupPageBase extends VerticalLayout {
     private final Button resetButton = new Button("Reset Filters");
 
     private List<QboTransactionRow> currentRows = List.of();
+    private Long activeJobId;
+    private List<QboTransactionRow> pendingRecoveryRoots = List.of();
+    private QboCleanupDryRunPlan lastRecoveryPlan;
+    private boolean pollListenerRegistered;
 
-    protected QboCleanupPageBase(QboCleanupService cleanupService, QboCleanupEntityType entityType, String pageTitle) {
+    protected QboCleanupPageBase(QboCleanupService cleanupService,
+                                 QuickBooksJobService quickBooksJobService,
+                                 AppJobService appJobService,
+                                 QboCleanupEntityType entityType,
+                                 String pageTitle) {
         this.cleanupService = cleanupService;
+        this.quickBooksJobService = quickBooksJobService;
+        this.appJobService = appJobService;
         this.entityType = entityType;
         addClassName("corp-page");
         setSizeFull();
@@ -67,6 +88,15 @@ public abstract class QboCleanupPageBase extends VerticalLayout {
         configureGrid();
         configureResultsGrid();
         configureActions();
+    }
+
+    @Override
+    protected void onAttach(AttachEvent attachEvent) {
+        super.onAttach(attachEvent);
+        if (!pollListenerRegistered) {
+            attachEvent.getUI().addPollListener(event -> refreshActiveJob());
+            pollListenerRegistered = true;
+        }
     }
 
     private void configureFilters() {
@@ -178,11 +208,10 @@ public abstract class QboCleanupPageBase extends VerticalLayout {
                 sortBy.getValue(),
                 sortDirection.getValue(),
                 pageSize.getValue() == null ? 200 : pageSize.getValue());
-        currentRows = cleanupService.list(entityType, filter, effectiveIncludeAll);
-        grid.setItems(currentRows);
-        summary.setText("Loaded " + currentRows.size() + " records"
-                + " | Sort: " + filter.sortField() + " " + filter.sortDirection()
-                + (effectiveIncludeAll ? " (all pages)." : "."));
+        searchButton.setEnabled(false);
+        activeJobId = quickBooksJobService.enqueueCleanupSearch(entityType, filter, effectiveIncludeAll).getId();
+        summary.setText("Search started in background.");
+        getUI().ifPresent(ui -> ui.setPollInterval(3000));
     }
 
     private void resetFilters() {
@@ -208,8 +237,10 @@ public abstract class QboCleanupPageBase extends VerticalLayout {
             notifyWarning("Select at least one record.");
             return;
         }
-        QboCleanupService.CleanupActionResponse response = cleanupService.delete(entityType, selected);
-        handleDeleteResponse(selected, response, "Delete completed for selected records.");
+        activeJobId = quickBooksJobService.enqueueCleanupDelete(entityType, selected).getId();
+        pendingRecoveryRoots = selected;
+        summary.setText("Delete started in background.");
+        getUI().ifPresent(ui -> ui.setPollInterval(3000));
     }
 
     private void runVoidSelected() {
@@ -218,10 +249,9 @@ public abstract class QboCleanupPageBase extends VerticalLayout {
             notifyWarning("Select at least one record.");
             return;
         }
-        QboCleanupService.CleanupActionResponse response = cleanupService.voidTransactions(entityType, selected);
-        resultGrid.setItems(response.results());
-        notifyOutcome(response.results(), "Void completed for selected records.");
-        search(false);
+        activeJobId = quickBooksJobService.enqueueCleanupVoid(entityType, selected).getId();
+        summary.setText("Void started in background.");
+        getUI().ifPresent(ui -> ui.setPollInterval(3000));
     }
 
     private void runVoidAllVisible() {
@@ -229,10 +259,9 @@ public abstract class QboCleanupPageBase extends VerticalLayout {
             notifyWarning("Run Search first.");
             return;
         }
-        QboCleanupService.CleanupActionResponse response = cleanupService.voidTransactions(entityType, currentRows);
-        resultGrid.setItems(response.results());
-        notifyOutcome(response.results(), "Void completed for visible records.");
-        search(false);
+        activeJobId = quickBooksJobService.enqueueCleanupVoid(entityType, currentRows).getId();
+        summary.setText("Void started in background.");
+        getUI().ifPresent(ui -> ui.setPollInterval(3000));
     }
 
     private void askDeleteAllScope() {
@@ -260,8 +289,10 @@ public abstract class QboCleanupPageBase extends VerticalLayout {
             notifyWarning("Run Search first.");
             return;
         }
-        QboCleanupService.CleanupActionResponse response = cleanupService.delete(entityType, currentRows);
-        handleDeleteResponse(new ArrayList<>(currentRows), response, "Delete-all completed.");
+        activeJobId = quickBooksJobService.enqueueCleanupDelete(entityType, currentRows).getId();
+        pendingRecoveryRoots = new ArrayList<>(currentRows);
+        summary.setText("Delete started in background.");
+        getUI().ifPresent(ui -> ui.setPollInterval(3000));
     }
 
     private void confirmTwoStep(String message, Runnable action) {
@@ -310,7 +341,83 @@ public abstract class QboCleanupPageBase extends VerticalLayout {
     }
 
     private void askLinkedDeleteRecovery(List<QboTransactionRow> roots) {
-        QboCleanupDryRunPlan plan = cleanupService.prepareRecoveryPlan(entityType, roots);
+        activeJobId = quickBooksJobService.enqueueCleanupRecoveryPlan(entityType, roots).getId();
+        pendingRecoveryRoots = roots;
+        summary.setText("Preparing linked-record recovery plan...");
+        getUI().ifPresent(ui -> ui.setPollInterval(3000));
+    }
+
+    private void runRecoveryPlan(QboCleanupDryRunPlan plan, boolean allowVoidFallback) {
+        activeJobId = quickBooksJobService.enqueueCleanupRecoveryExecution(plan, allowVoidFallback).getId();
+        summary.setText("Dependency recovery started in background.");
+        getUI().ifPresent(ui -> ui.setPollInterval(3000));
+    }
+
+    private void notifySuccess(String message) {
+        Notification notification = Notification.show(message);
+        notification.addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+    }
+
+    private void notifyWarning(String message) {
+        Notification notification = Notification.show(message);
+        notification.addThemeVariants(NotificationVariant.LUMO_WARNING);
+    }
+
+    private void refreshActiveJob() {
+        if (activeJobId != null) {
+            appJobService.findSnapshot(activeJobId).ifPresent(this::applyJobSnapshot);
+        }
+    }
+
+    private void applyJobSnapshot(AppJobSnapshot snapshot) {
+        if (snapshot.status() == AppJobStatus.QUEUED || snapshot.status() == AppJobStatus.RUNNING) {
+            summary.setText(snapshot.summaryMessage());
+            return;
+        }
+        searchButton.setEnabled(true);
+        if (snapshot.status() == AppJobStatus.FAILED) {
+            notifyWarning("Operation failed: " + snapshot.summaryMessage());
+            summary.setText(snapshot.summaryMessage());
+            activeJobId = null;
+            getUI().ifPresent(ui -> ui.setPollInterval(-1));
+            return;
+        }
+        switch (snapshot.type()) {
+            case QBO_CLEANUP_SEARCH -> {
+                QboCleanupSearchJobResult result = appJobService.readResult(snapshot.resultPayload(), QboCleanupSearchJobResult.class);
+                currentRows = result.rows();
+                grid.setItems(currentRows);
+                summary.setText(result.summaryText());
+            }
+            case QBO_CLEANUP_DELETE -> {
+                QboCleanupActionJobResult result = appJobService.readResult(snapshot.resultPayload(), QboCleanupActionJobResult.class);
+                handleDeleteResponse(pendingRecoveryRoots, result.response(), "Delete completed.");
+            }
+            case QBO_CLEANUP_VOID -> {
+                QboCleanupActionJobResult result = appJobService.readResult(snapshot.resultPayload(), QboCleanupActionJobResult.class);
+                resultGrid.setItems(result.response().results());
+                notifyOutcome(result.response().results(), "Void completed.");
+                search(false);
+            }
+            case QBO_CLEANUP_RECOVERY_PLAN -> {
+                QboCleanupRecoveryPlanJobResult result = appJobService.readResult(snapshot.resultPayload(), QboCleanupRecoveryPlanJobResult.class);
+                lastRecoveryPlan = result.plan();
+                showRecoveryPlanDialog(result.plan());
+            }
+            case QBO_CLEANUP_RECOVERY_EXECUTION -> {
+                QboCleanupRecoveryExecutionJobResult result = appJobService.readResult(snapshot.resultPayload(), QboCleanupRecoveryExecutionJobResult.class);
+                handleRecoveryExecutionResult(result.result());
+            }
+            default -> {
+            }
+        }
+        activeJobId = null;
+        if (activeJobId == null) {
+            getUI().ifPresent(ui -> ui.setPollInterval(-1));
+        }
+    }
+
+    private void showRecoveryPlanDialog(QboCleanupDryRunPlan plan) {
         if (plan.linkedCount() == 0) {
             search(false);
             return;
@@ -343,8 +450,7 @@ public abstract class QboCleanupPageBase extends VerticalLayout {
         dialog.open();
     }
 
-    private void runRecoveryPlan(QboCleanupDryRunPlan plan, boolean allowVoidFallback) {
-        QboCleanupRecoveryResult result = cleanupService.executeRecoveryPlan(plan, allowVoidFallback);
+    private void handleRecoveryExecutionResult(QboCleanupRecoveryResult result) {
         resultGrid.setItems(result.results());
         long failures = result.results().stream().filter(item -> !item.success()).count();
         if (failures == 0) {
@@ -354,7 +460,7 @@ public abstract class QboCleanupPageBase extends VerticalLayout {
         }
         boolean hasLinkedDeleteFailures = result.results().stream()
                 .anyMatch(item -> !item.success() && "LINKED".equals(item.source()) && "DELETE".equals(item.action()));
-        if (hasLinkedDeleteFailures && !allowVoidFallback) {
+        if (hasLinkedDeleteFailures && !result.usedVoidFallback()) {
             Dialog fallbackDialog = new Dialog();
             fallbackDialog.setHeaderTitle("Delete Failed For Linked Records");
             fallbackDialog.add(new Paragraph("Some linked records could not be deleted. Try void fallback and continue?"));
@@ -364,7 +470,7 @@ public abstract class QboCleanupPageBase extends VerticalLayout {
             });
             Button fallback = new Button("Use Void Fallback", event -> {
                 fallbackDialog.close();
-                runRecoveryPlan(plan, true);
+                runRecoveryPlan(lastRecoveryPlan, true);
             });
             fallback.addThemeName("primary");
             fallbackDialog.getFooter().add(cancel, fallback);
@@ -373,15 +479,5 @@ public abstract class QboCleanupPageBase extends VerticalLayout {
         }
         notifyWarning("Dependency recovery finished with " + failures + " failure(s).");
         search(false);
-    }
-
-    private void notifySuccess(String message) {
-        Notification notification = Notification.show(message);
-        notification.addThemeVariants(NotificationVariant.LUMO_SUCCESS);
-    }
-
-    private void notifyWarning(String message) {
-        Notification notification = Notification.show(message);
-        notification.addThemeVariants(NotificationVariant.LUMO_WARNING);
     }
 }

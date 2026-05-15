@@ -14,7 +14,9 @@ import com.example.quickbooksimporter.repository.ImportRunRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.ByteArrayInputStream;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -49,19 +51,36 @@ public class ExpenseImportService {
     }
 
     public ExpenseImportPreview preview(String fileName, byte[] bytes, Map<NormalizedExpenseField, String> mapping) {
-        return preview(fileName, bytes, mapping, DateFormatOption.AUTO);
+        return preview(fileName, bytes, mapping, DateFormatOption.AUTO, PreviewProgressListener.noop());
     }
 
     public ExpenseImportPreview preview(String fileName,
                                         byte[] bytes,
                                         Map<NormalizedExpenseField, String> mapping,
                                         DateFormatOption dateFormatOption) {
+        return preview(fileName, bytes, mapping, dateFormatOption, PreviewProgressListener.noop());
+    }
+
+    public ExpenseImportPreview preview(String fileName,
+                                        byte[] bytes,
+                                        Map<NormalizedExpenseField, String> mapping,
+                                        DateFormatOption dateFormatOption,
+                                        PreviewProgressListener progressListener) {
         ParsedCsvDocument document = parser.parse(new ByteArrayInputStream(bytes));
         Map<NormalizedExpenseField, String> finalMapping = new EnumMap<>(mapping);
         DateFormatOption effective = dateFormatOption == null ? DateFormatOption.AUTO : dateFormatOption;
-        List<ExpenseRowValidationResult> validations = document.rows().stream()
-                .map(row -> validateRow(row, finalMapping, effective))
-                .toList();
+        PreviewProgressListener listener = progressListener == null ? PreviewProgressListener.noop() : progressListener;
+        List<ExpenseRowValidationResult> validations = new ArrayList<>();
+        int totalRows = document.rows().size();
+        int completed = 0;
+        if (totalRows > 0) {
+            listener.onProgress(0, totalRows, "Validated 0/" + totalRows + " expense rows");
+        }
+        for (var row : document.rows()) {
+            validations.add(validateRow(row, finalMapping, effective));
+            completed++;
+            listener.onProgress(completed, totalRows, "Validated " + completed + "/" + totalRows + " expense rows");
+        }
         List<ExpenseImportPreviewRow> rows = validations.stream()
                 .map(result -> new ExpenseImportPreviewRow(
                         result.rowNumber(),
@@ -108,10 +127,19 @@ public class ExpenseImportService {
         run.setCreatedAt(Instant.now());
         run.setCompany(connectionService.requireCurrentCompany());
         run.setExportCsv(null);
+        run.setTotalRows(preview.rows().size());
+        run.setValidRows((int) readyRows);
+        run.setInvalidRows((int) preview.validations().stream().filter(result -> result.status() == ImportRowStatus.INVALID).count());
+        run.setDuplicateRows((int) preview.validations().stream().filter(result -> result.status() == ImportRowStatus.DUPLICATE).count());
+        run.setAttemptedRows(0);
+        run.setSkippedRows(0);
+        run.setImportedRows(0);
         applyExecutionOptions(run, options);
         run = importRunRepository.save(run);
 
         int processedSinceFlush = 0;
+        Instant lastFlushAt = Instant.now();
+        List<PreparedExpenseCreate> prepared = new ArrayList<>();
         for (ExpenseRowValidationResult validation : preview.validations()) {
             ImportRowResultEntity rowEntity = buildRow(run, validation);
             if (mode == ImportExecutionMode.IMPORT_READY_ONLY && validation.status() != ImportRowStatus.READY) {
@@ -120,39 +148,59 @@ public class ExpenseImportService {
                 run.getRowResults().add(rowEntity);
                 skipped++;
                 processedSinceFlush++;
-                if (processedSinceFlush >= 25) {
-                    run.setAttemptedRows(attempted);
-                    run.setSkippedRows(skipped);
-                    run.setImportedRows(imported);
-                    importRunRepository.save(run);
+                ImportRunProgressFlusher.ProgressFlushResult flushResult = flushProgress(
+                        run, attempted, skipped, imported, processedSinceFlush, lastFlushAt);
+                lastFlushAt = flushResult.lastFlushAt();
+                if (flushResult.flushed()) {
                     processedSinceFlush = 0;
                 }
                 continue;
             }
+            run.getRowResults().add(rowEntity);
+            attempted++;
             try {
-                attempted++;
                 NormalizedExpense expense = validation.expense();
                 quickBooksGateway.ensureVendor(realmId, expense.vendor());
                 quickBooksGateway.ensureExpenseCategory(realmId, expense.category());
-                QuickBooksExpenseCreateResult created = quickBooksGateway.createExpense(realmId, expense);
-                rowEntity.setStatus(ImportRowStatus.IMPORTED);
-                rowEntity.setCreatedEntityId(created.expenseId());
-                String label = created.expenseNumber() == null ? expense.referenceNo() : created.expenseNumber();
-                rowEntity.setMessage("Imported as QuickBooks expense " + label);
-                imported++;
+                prepared.add(new PreparedExpenseCreate(expense, rowEntity));
             } catch (Exception exception) {
                 rowEntity.setStatus(ImportRowStatus.FAILED);
                 rowEntity.setMessage(exception.getMessage());
                 failed++;
+                processedSinceFlush++;
+                ImportRunProgressFlusher.ProgressFlushResult flushResult = flushProgress(
+                        run, attempted, skipped, imported, processedSinceFlush, lastFlushAt);
+                lastFlushAt = flushResult.lastFlushAt();
+                if (flushResult.flushed()) {
+                    processedSinceFlush = 0;
+                }
             }
-            run.getRowResults().add(rowEntity);
-            processedSinceFlush++;
-            if (processedSinceFlush >= 25) {
-                run.setAttemptedRows(attempted);
-                run.setSkippedRows(skipped);
-                run.setImportedRows(imported);
-                importRunRepository.save(run);
-                processedSinceFlush = 0;
+        }
+        if (!prepared.isEmpty()) {
+            List<QuickBooksBatchCreateResult> results = quickBooksGateway.createExpensesBatch(
+                    realmId,
+                    prepared.stream().map(PreparedExpenseCreate::expense).toList());
+            for (int index = 0; index < prepared.size(); index++) {
+                PreparedExpenseCreate item = prepared.get(index);
+                QuickBooksBatchCreateResult result = results.get(index);
+                if (result.success()) {
+                    item.row().setStatus(ImportRowStatus.IMPORTED);
+                    item.row().setCreatedEntityId(result.entityId());
+                    String label = result.referenceNumber() == null ? item.expense().referenceNo() : result.referenceNumber();
+                    item.row().setMessage("Imported as QuickBooks expense " + label);
+                    imported++;
+                } else {
+                    item.row().setStatus(ImportRowStatus.FAILED);
+                    item.row().setMessage(result.message());
+                    failed++;
+                }
+                processedSinceFlush++;
+                ImportRunProgressFlusher.ProgressFlushResult flushResult = flushProgress(
+                        run, attempted, skipped, imported, processedSinceFlush, lastFlushAt);
+                lastFlushAt = flushResult.lastFlushAt();
+                if (flushResult.flushed()) {
+                    processedSinceFlush = 0;
+                }
             }
         }
         run.setTotalRows(preview.rows().size());
@@ -240,5 +288,24 @@ public class ExpenseImportService {
             return ImportExecutionMode.STRICT_ALL_ROWS;
         }
         return options.executionMode();
+    }
+
+    private ImportRunProgressFlusher.ProgressFlushResult flushProgress(ImportRunEntity run,
+                                                                       int attempted,
+                                                                       int skipped,
+                                                                       int imported,
+                                                                       int processedSinceFlush,
+                                                                       Instant lastFlushAt) {
+        return ImportRunProgressFlusher.flushProgress(
+                importRunRepository,
+                run,
+                attempted,
+                skipped,
+                imported,
+                processedSinceFlush,
+                lastFlushAt);
+    }
+
+    private record PreparedExpenseCreate(NormalizedExpense expense, ImportRowResultEntity row) {
     }
 }

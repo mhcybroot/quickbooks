@@ -15,6 +15,7 @@ import com.example.quickbooksimporter.repository.ImportRunRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.ByteArrayInputStream;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -47,19 +48,28 @@ public class BillImportService {
     }
 
     public BillImportPreview preview(String fileName, byte[] bytes, Map<NormalizedBillField, String> mapping) {
-        return preview(fileName, bytes, mapping, DateFormatOption.AUTO);
+        return preview(fileName, bytes, mapping, DateFormatOption.AUTO, PreviewProgressListener.noop());
     }
 
     public BillImportPreview preview(String fileName,
                                      byte[] bytes,
                                      Map<NormalizedBillField, String> mapping,
                                      DateFormatOption dateFormatOption) {
+        return preview(fileName, bytes, mapping, dateFormatOption, PreviewProgressListener.noop());
+    }
+
+    public BillImportPreview preview(String fileName,
+                                     byte[] bytes,
+                                     Map<NormalizedBillField, String> mapping,
+                                     DateFormatOption dateFormatOption,
+                                     PreviewProgressListener progressListener) {
         ParsedCsvDocument doc = parser.parse(new ByteArrayInputStream(bytes));
         Map<NormalizedBillField, String> finalMapping = new EnumMap<>(mapping);
         List<BillRowValidationResult> validations = validateGrouped(
                 doc,
                 finalMapping,
-                dateFormatOption == null ? DateFormatOption.AUTO : dateFormatOption);
+                dateFormatOption == null ? DateFormatOption.AUTO : dateFormatOption,
+                progressListener == null ? PreviewProgressListener.noop() : progressListener);
         List<BillImportPreviewRow> rows = validations.stream().map(v -> new BillImportPreviewRow(
                 v.rowNumber(),
                 v.bill() == null ? "" : v.bill().billNo(),
@@ -104,9 +114,18 @@ public class BillImportService {
         run.setCreatedAt(Instant.now());
         run.setCompany(connectionService.requireCurrentCompany());
         run.setExportCsv(null);
+        run.setTotalRows(preview.rows().size());
+        run.setValidRows((int) readyRows);
+        run.setInvalidRows((int) preview.validations().stream().filter(v -> v.status() == ImportRowStatus.INVALID).count());
+        run.setDuplicateRows((int) preview.validations().stream().filter(v -> v.status() == ImportRowStatus.DUPLICATE).count());
+        run.setAttemptedRows(0);
+        run.setSkippedRows(0);
+        run.setImportedRows(0);
         applyExecutionOptions(run, options);
         run = importRunRepository.save(run);
         int processedSinceFlush = 0;
+        Instant lastFlushAt = Instant.now();
+        List<PreparedBillCreate> prepared = new ArrayList<>();
         for (BillRowValidationResult validation : preview.validations()) {
             ImportRowResultEntity row = buildRow(run, validation);
             if (mode == ImportExecutionMode.IMPORT_READY_ONLY && validation.status() != ImportRowStatus.READY) {
@@ -115,17 +134,17 @@ public class BillImportService {
                 run.getRowResults().add(row);
                 skipped++;
                 processedSinceFlush++;
-                if (processedSinceFlush >= 25) {
-                    run.setAttemptedRows(attempted);
-                    run.setSkippedRows(skipped);
-                    run.setImportedRows(imported);
-                    importRunRepository.save(run);
+                ImportRunProgressFlusher.ProgressFlushResult flushResult = flushProgress(
+                        run, attempted, skipped, imported, processedSinceFlush, lastFlushAt);
+                lastFlushAt = flushResult.lastFlushAt();
+                if (flushResult.flushed()) {
                     processedSinceFlush = 0;
                 }
                 continue;
             }
+            run.getRowResults().add(row);
+            attempted++;
             try {
-                attempted++;
                 NormalizedBill bill = validation.bill();
                 quickBooksGateway.ensureVendor(realmId, bill.vendor());
                 for (BillLine line : bill.lines()) {
@@ -133,24 +152,45 @@ public class BillImportService {
                         quickBooksGateway.ensureExpenseCategory(realmId, line.category());
                     }
                 }
-                QuickBooksBillCreateResult created = quickBooksGateway.createBill(realmId, bill);
-                row.setStatus(ImportRowStatus.IMPORTED);
-                row.setCreatedEntityId(created.billId());
-                row.setMessage("Imported as QuickBooks bill " + (created.docNumber() == null ? bill.billNo() : created.docNumber()));
-                imported++;
+                prepared.add(new PreparedBillCreate(bill, row));
             } catch (Exception ex) {
                 row.setStatus(ImportRowStatus.FAILED);
                 row.setMessage(ex.getMessage());
                 failed++;
+                processedSinceFlush++;
+                ImportRunProgressFlusher.ProgressFlushResult flushResult = flushProgress(
+                        run, attempted, skipped, imported, processedSinceFlush, lastFlushAt);
+                lastFlushAt = flushResult.lastFlushAt();
+                if (flushResult.flushed()) {
+                    processedSinceFlush = 0;
+                }
             }
-            run.getRowResults().add(row);
-            processedSinceFlush++;
-            if (processedSinceFlush >= 25) {
-                run.setAttemptedRows(attempted);
-                run.setSkippedRows(skipped);
-                run.setImportedRows(imported);
-                importRunRepository.save(run);
-                processedSinceFlush = 0;
+        }
+        if (!prepared.isEmpty()) {
+            List<QuickBooksBatchCreateResult> results = quickBooksGateway.createBillsBatch(
+                    realmId,
+                    prepared.stream().map(PreparedBillCreate::bill).toList());
+            for (int index = 0; index < prepared.size(); index++) {
+                PreparedBillCreate item = prepared.get(index);
+                QuickBooksBatchCreateResult result = results.get(index);
+                if (result.success()) {
+                    item.row().setStatus(ImportRowStatus.IMPORTED);
+                    item.row().setCreatedEntityId(result.entityId());
+                    String label = result.referenceNumber() == null ? item.bill().billNo() : result.referenceNumber();
+                    item.row().setMessage("Imported as QuickBooks bill " + label);
+                    imported++;
+                } else {
+                    item.row().setStatus(ImportRowStatus.FAILED);
+                    item.row().setMessage(result.message());
+                    failed++;
+                }
+                processedSinceFlush++;
+                ImportRunProgressFlusher.ProgressFlushResult flushResult = flushProgress(
+                        run, attempted, skipped, imported, processedSinceFlush, lastFlushAt);
+                lastFlushAt = flushResult.lastFlushAt();
+                if (flushResult.flushed()) {
+                    processedSinceFlush = 0;
+                }
             }
         }
         run.setTotalRows(preview.rows().size());
@@ -171,7 +211,8 @@ public class BillImportService {
 
     private List<BillRowValidationResult> validateGrouped(ParsedCsvDocument doc,
                                                           Map<NormalizedBillField, String> mapping,
-                                                          DateFormatOption dateFormatOption) {
+                                                          DateFormatOption dateFormatOption,
+                                                          PreviewProgressListener progressListener) {
         Map<String, List<BillRowMapper.BillRowMapped>> groups = new HashMap<>();
         List<BillRowValidationResult> validations = new ArrayList<>();
         for (var row : doc.rows()) {
@@ -182,6 +223,11 @@ public class BillImportService {
             } catch (Exception ex) {
                 validations.add(new BillRowValidationResult(row.rowNumber(), row, null, ImportRowStatus.INVALID, ex.getMessage(), row.values()));
             }
+        }
+        int totalGroups = groups.size() + validations.size();
+        int completedGroups = validations.size();
+        if (totalGroups > 0) {
+            progressListener.onProgress(completedGroups, totalGroups, "Validated " + completedGroups + "/" + totalGroups + " bill groups");
         }
         for (List<BillRowMapper.BillRowMapped> group : groups.values()) {
             var first = group.getFirst();
@@ -201,6 +247,8 @@ public class BillImportService {
                 v = new BillRowValidationResult(v.rowNumber(), v.parsedRow(), v.bill(), ImportRowStatus.INVALID, v.message() + "; " + String.join("; ", gErrors), v.rawData());
             }
             validations.add(v);
+            completedGroups++;
+            progressListener.onProgress(completedGroups, totalGroups, "Validated " + completedGroups + "/" + totalGroups + " bill groups");
         }
         validations.sort(Comparator.comparingInt(BillRowValidationResult::rowNumber));
         return validations;
@@ -258,5 +306,24 @@ public class BillImportService {
             return ImportExecutionMode.STRICT_ALL_ROWS;
         }
         return options.executionMode();
+    }
+
+    private ImportRunProgressFlusher.ProgressFlushResult flushProgress(ImportRunEntity run,
+                                                                       int attempted,
+                                                                       int skipped,
+                                                                       int imported,
+                                                                       int processedSinceFlush,
+                                                                       Instant lastFlushAt) {
+        return ImportRunProgressFlusher.flushProgress(
+                importRunRepository,
+                run,
+                attempted,
+                skipped,
+                imported,
+                processedSinceFlush,
+                lastFlushAt);
+    }
+
+    private record PreparedBillCreate(NormalizedBill bill, ImportRowResultEntity row) {
     }
 }

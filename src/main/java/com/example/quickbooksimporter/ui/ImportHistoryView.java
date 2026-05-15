@@ -6,6 +6,7 @@ import com.example.quickbooksimporter.persistence.ImportBatchEntity;
 import com.example.quickbooksimporter.persistence.ImportRowResultEntity;
 import com.example.quickbooksimporter.persistence.ImportRunEntity;
 import com.example.quickbooksimporter.service.ImportHistoryService;
+import com.example.quickbooksimporter.service.ImportProgressService;
 import com.example.quickbooksimporter.ui.components.UiComponents;
 import com.vaadin.flow.component.html.Anchor;
 import com.vaadin.flow.component.button.Button;
@@ -33,6 +34,7 @@ import com.vaadin.flow.server.StreamResource;
 public class ImportHistoryView extends VerticalLayout {
 
     private final ImportHistoryService historyService;
+    private final ImportProgressService progressService;
     private final Grid<ImportRunEntity> runGrid = new Grid<>(ImportRunEntity.class, false);
     private final Grid<ImportRowResultEntity> rowGrid = new Grid<>(ImportRowResultEntity.class, false);
     private final Grid<ImportBatchEntity> batchGrid = new Grid<>(ImportBatchEntity.class, false);
@@ -43,8 +45,10 @@ public class ImportHistoryView extends VerticalLayout {
     private final Paragraph runScopeSummary = new Paragraph("Showing the latest runs across all import types.");
     private final Anchor downloadRunCsv = new Anchor();
 
-    public ImportHistoryView(ImportHistoryService historyService) {
+    public ImportHistoryView(ImportHistoryService historyService,
+                             ImportProgressService progressService) {
         this.historyService = historyService;
+        this.progressService = progressService;
         addClassName("corp-page");
         setSizeFull();
 
@@ -86,6 +90,9 @@ public class ImportHistoryView extends VerticalLayout {
         batchGrid.addColumn(batch -> batch.getStatus().name()).setHeader("Status").setAutoWidth(true);
         batchGrid.addColumn(ImportBatchEntity::getTotalFiles).setHeader("Files").setAutoWidth(true);
         batchGrid.addColumn(ImportBatchEntity::getCompletedFiles).setHeader("Completed").setAutoWidth(true);
+        batchGrid.addColumn(batch -> progressService.findBatchProgress(batch.getId())
+                .map(snapshot -> snapshot.percentLabel() + " | " + snapshot.remainingLabel())
+                .orElse("-")).setHeader("Progress").setAutoWidth(true);
         batchGrid.addColumn(ImportBatchEntity::getUpdatedAt).setHeader("Updated").setAutoWidth(true).setFlexGrow(1);
         batchGrid.setItems(historyService.recentBatches());
         batchGrid.setHeight("220px");
@@ -116,6 +123,9 @@ public class ImportHistoryView extends VerticalLayout {
         runGrid.addColumn(ImportRunEntity::getAttemptedRows).setHeader("Attempted").setAutoWidth(true).setFlexGrow(0);
         runGrid.addColumn(ImportRunEntity::getSkippedRows).setHeader("Skipped").setAutoWidth(true).setFlexGrow(0);
         runGrid.addColumn(ImportRunEntity::getImportedRows).setHeader("Imported").setAutoWidth(true).setFlexGrow(0);
+        runGrid.addColumn(run -> progressService.findRunProgress(run.getId())
+                .map(snapshot -> snapshot.percentLabel() + " | " + snapshot.remainingLabel())
+                .orElse("-")).setHeader("Progress").setAutoWidth(true).setFlexGrow(0);
         runGrid.addColumn(ImportRunEntity::getCreatedAt).setHeader("Created").setAutoWidth(true).setFlexGrow(1);
         runGrid.setWidthFull();
         runGrid.addClassName("corp-grid");

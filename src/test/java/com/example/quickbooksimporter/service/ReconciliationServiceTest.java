@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 import com.example.quickbooksimporter.domain.ParsedCsvRow;
@@ -50,15 +51,15 @@ class ReconciliationServiceTest {
     @BeforeEach
     void setUp() {
         service = new ReconciliationService(parser, connectionService, gateway, sessionRepository, currentCompanyService);
-        when(currentCompanyService.requireCurrentCompanyId()).thenReturn(1L);
+        lenient().when(currentCompanyService.requireCurrentCompanyId()).thenReturn(1L);
         QboConnectionEntity connection = new QboConnectionEntity();
         connection.setRealmId("realm-1");
         connection.setConnectedAt(Instant.now());
         connection.setUpdatedAt(Instant.now());
         connection.setExpiresAt(Instant.now().plusSeconds(3600));
-        when(connectionService.getActiveConnection()).thenReturn(connection);
+        lenient().when(connectionService.getActiveConnection()).thenReturn(connection);
         CompanyEntity company = new CompanyEntity();
-        when(currentCompanyService.requireCurrentCompany()).thenReturn(company);
+        lenient().when(currentCompanyService.requireCurrentCompany()).thenReturn(company);
     }
 
     @Test

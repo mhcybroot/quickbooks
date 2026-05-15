@@ -55,6 +55,16 @@ public class ImportBatchEntity {
     @Column(nullable = false)
     private Instant updatedAt;
 
+    private Instant startedAt;
+
+    private Instant completedAt;
+
+    @Column(nullable = false)
+    private int plannedTotalRows;
+
+    @Column(nullable = false)
+    private int plannedRunnableRows;
+
     @OneToMany(mappedBy = "batch", cascade = CascadeType.ALL)
     private List<ImportRunEntity> runs = new ArrayList<>();
 
@@ -132,6 +142,38 @@ public class ImportBatchEntity {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public Instant getStartedAt() {
+        return startedAt;
+    }
+
+    public void setStartedAt(Instant startedAt) {
+        this.startedAt = startedAt;
+    }
+
+    public Instant getCompletedAt() {
+        return completedAt;
+    }
+
+    public void setCompletedAt(Instant completedAt) {
+        this.completedAt = completedAt;
+    }
+
+    public int getPlannedTotalRows() {
+        return plannedTotalRows;
+    }
+
+    public void setPlannedTotalRows(int plannedTotalRows) {
+        this.plannedTotalRows = plannedTotalRows;
+    }
+
+    public int getPlannedRunnableRows() {
+        return plannedRunnableRows;
+    }
+
+    public void setPlannedRunnableRows(int plannedRunnableRows) {
+        this.plannedRunnableRows = plannedRunnableRows;
     }
 
     public List<ImportRunEntity> getRuns() {

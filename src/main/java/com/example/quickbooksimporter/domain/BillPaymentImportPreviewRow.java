@@ -6,5 +6,5 @@ public record BillPaymentImportPreviewRow(
         String billNo,
         String referenceNo,
         ImportRowStatus status,
-        String message) {
+        String message) implements com.example.quickbooksimporter.service.ImportPreviewSummary.ImportPreviewStatusRow {
 }

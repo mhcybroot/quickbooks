@@ -1,10 +1,15 @@
 package com.example.quickbooksimporter.ui;
 
+import com.example.quickbooksimporter.domain.AppJobStatus;
+import com.example.quickbooksimporter.service.AppJobService;
+import com.example.quickbooksimporter.service.AppJobSnapshot;
 import com.example.quickbooksimporter.service.QuickBooksConnectionService;
 import com.example.quickbooksimporter.service.QuickBooksConnectionStatus;
 import com.example.quickbooksimporter.service.QuickBooksGateway;
 import com.example.quickbooksimporter.service.QuickBooksIncomeAccount;
 import com.example.quickbooksimporter.service.LegalUrlService;
+import com.example.quickbooksimporter.service.QuickBooksJobService;
+import com.example.quickbooksimporter.service.SettingsIncomeAccountsJobResult;
 import com.example.quickbooksimporter.ui.components.LegalLinks;
 import com.example.quickbooksimporter.ui.components.UiComponents;
 import com.vaadin.flow.component.Text;
@@ -18,6 +23,7 @@ import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.UI;
+import com.vaadin.flow.component.AttachEvent;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 import jakarta.annotation.security.PermitAll;
@@ -28,9 +34,19 @@ import java.util.List;
 @PermitAll
 public class SettingsView extends VerticalLayout {
 
+    private final AppJobService appJobService;
+    private final Grid<QuickBooksIncomeAccount> accountsGrid = new Grid<>(QuickBooksIncomeAccount.class, false);
+    private final Paragraph accountsStatus = new Paragraph("Load income accounts on demand.");
+    private final Button loadAccounts = new Button("Load Income Accounts");
+    private Long loadAccountsJobId;
+    private boolean pollListenerRegistered;
+
     public SettingsView(QuickBooksConnectionService connectionService,
                         QuickBooksGateway quickBooksGateway,
-                        LegalUrlService legalUrlService) {
+                        LegalUrlService legalUrlService,
+                        QuickBooksJobService quickBooksJobService,
+                        AppJobService appJobService) {
+        this.appJobService = appJobService;
         QuickBooksConnectionStatus status = connectionService.getStatus();
         addClassName("corp-page");
         setSpacing(true);
@@ -86,31 +102,66 @@ public class SettingsView extends VerticalLayout {
                 privacyUrl,
                 LegalLinks.inline(legalUrlService)));
 
-        Grid<QuickBooksIncomeAccount> accountsGrid = new Grid<>(QuickBooksIncomeAccount.class, false);
         accountsGrid.addColumn(QuickBooksIncomeAccount::id).setHeader("Account ID").setAutoWidth(true);
         accountsGrid.addColumn(QuickBooksIncomeAccount::name).setHeader("Name").setAutoWidth(true).setFlexGrow(1);
         accountsGrid.addColumn(QuickBooksIncomeAccount::accountSubType).setHeader("Sub Type").setAutoWidth(true);
         accountsGrid.setHeight("320px");
         accountsGrid.addClassName("corp-grid");
 
-        Button loadAccounts = new Button("Load Income Accounts", event -> {
+        loadAccounts.addClickListener(event -> {
             if (!status.connected()) {
                 Notification.show("Connect QuickBooks first.");
                 return;
             }
-            try {
-                List<QuickBooksIncomeAccount> accounts = quickBooksGateway.listIncomeAccounts(status.realmId());
-                accountsGrid.setItems(accounts);
-                Notification.show("Loaded " + accounts.size() + " income accounts. Copy the Account ID you want.");
-            } catch (Exception exception) {
-                Notification.show("Unable to load income accounts: " + exception.getMessage());
-            }
+            loadAccounts.setEnabled(false);
+            loadAccountsJobId = quickBooksJobService.enqueueLoadIncomeAccounts().getId();
+            accountsStatus.setText("Income account load started in the background.");
+            getUI().ifPresent(ui -> ui.setPollInterval(3000));
         });
         loadAccounts.addThemeName("primary");
 
         add(UiComponents.card(new H3("Find QB_SERVICE_ITEM_INCOME_ACCOUNT_ID"),
                 new Paragraph("Click Load Income Accounts, then copy an Account ID and set it in app.quickbooks.service-item-income-account-id."),
                 loadAccounts,
+                accountsStatus,
                 accountsGrid));
+    }
+
+    @Override
+    protected void onAttach(AttachEvent attachEvent) {
+        super.onAttach(attachEvent);
+        if (!pollListenerRegistered) {
+            attachEvent.getUI().addPollListener(event -> refreshLoadAccountsJob());
+            pollListenerRegistered = true;
+        }
+    }
+
+    private void refreshLoadAccountsJob() {
+        if (loadAccountsJobId == null) {
+            return;
+        }
+        appJobService.findSnapshot(loadAccountsJobId).ifPresent(this::applyLoadAccountsSnapshot);
+    }
+
+    private void applyLoadAccountsSnapshot(AppJobSnapshot snapshot) {
+        if (snapshot.status() == AppJobStatus.QUEUED || snapshot.status() == AppJobStatus.RUNNING) {
+            accountsStatus.setText(snapshot.summaryMessage());
+            return;
+        }
+        loadAccounts.setEnabled(true);
+        if (snapshot.status() == AppJobStatus.FAILED) {
+            accountsStatus.setText("Unable to load income accounts: " + snapshot.summaryMessage());
+            Notification.show("Unable to load income accounts: " + snapshot.summaryMessage());
+            loadAccountsJobId = null;
+            getUI().ifPresent(ui -> ui.setPollInterval(-1));
+            return;
+        }
+        SettingsIncomeAccountsJobResult result = appJobService.readResult(snapshot.resultPayload(), SettingsIncomeAccountsJobResult.class);
+        List<QuickBooksIncomeAccount> accounts = result == null ? List.of() : result.accounts();
+        accountsGrid.setItems(accounts);
+        accountsStatus.setText(snapshot.summaryMessage());
+        Notification.show("Loaded " + accounts.size() + " income accounts. Copy the Account ID you want.");
+        loadAccountsJobId = null;
+        getUI().ifPresent(ui -> ui.setPollInterval(-1));
     }
 }

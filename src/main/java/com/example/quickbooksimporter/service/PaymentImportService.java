@@ -15,7 +15,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
@@ -51,14 +53,14 @@ public class PaymentImportService {
     }
 
     public PaymentImportPreview preview(String fileName, byte[] bytes, Map<NormalizedPaymentField, String> mapping) {
-        return preview(fileName, bytes, mapping, Map.of(), DateFormatOption.AUTO);
+        return preview(fileName, bytes, mapping, Map.of(), DateFormatOption.AUTO, PreviewProgressListener.noop());
     }
 
     public PaymentImportPreview preview(String fileName,
                                         byte[] bytes,
                                         Map<NormalizedPaymentField, String> mapping,
                                         Map<String, QuickBooksInvoiceRef> draftInvoiceRefs) {
-        return preview(fileName, bytes, mapping, draftInvoiceRefs, DateFormatOption.AUTO);
+        return preview(fileName, bytes, mapping, draftInvoiceRefs, DateFormatOption.AUTO, PreviewProgressListener.noop());
     }
 
     public PaymentImportPreview preview(String fileName,
@@ -66,12 +68,30 @@ public class PaymentImportService {
                                         Map<NormalizedPaymentField, String> mapping,
                                         Map<String, QuickBooksInvoiceRef> draftInvoiceRefs,
                                         DateFormatOption paymentDateFormat) {
+        return preview(fileName, bytes, mapping, draftInvoiceRefs, paymentDateFormat, PreviewProgressListener.noop());
+    }
+
+    public PaymentImportPreview preview(String fileName,
+                                        byte[] bytes,
+                                        Map<NormalizedPaymentField, String> mapping,
+                                        Map<String, QuickBooksInvoiceRef> draftInvoiceRefs,
+                                        DateFormatOption paymentDateFormat,
+                                        PreviewProgressListener progressListener) {
         ParsedCsvDocument document = parser.parse(new ByteArrayInputStream(bytes));
         Map<NormalizedPaymentField, String> finalMapping = new EnumMap<>(mapping);
         Map<String, BigDecimal> allocatedByInvoice = new HashMap<>();
-        List<PaymentRowValidationResult> validations = document.rows().stream()
-                .map(row -> validateRow(row, finalMapping, allocatedByInvoice, draftInvoiceRefs, paymentDateFormat))
-                .toList();
+        PreviewProgressListener listener = progressListener == null ? PreviewProgressListener.noop() : progressListener;
+        List<PaymentRowValidationResult> validations = new ArrayList<>();
+        int totalRows = document.rows().size();
+        int completed = 0;
+        if (totalRows > 0) {
+            listener.onProgress(0, totalRows, "Validated 0/" + totalRows + " payment rows");
+        }
+        for (var row : document.rows()) {
+            validations.add(validateRow(row, finalMapping, allocatedByInvoice, draftInvoiceRefs, paymentDateFormat));
+            completed++;
+            listener.onProgress(completed, totalRows, "Validated " + completed + "/" + totalRows + " payment rows");
+        }
         List<PaymentImportPreviewRow> rows = validations.stream()
                 .map(result -> new PaymentImportPreviewRow(
                         result.rowNumber(),
@@ -118,10 +138,19 @@ public class PaymentImportService {
         run.setCreatedAt(Instant.now());
         run.setCompany(connectionService.requireCurrentCompany());
         run.setExportCsv(null);
+        run.setTotalRows(preview.rows().size());
+        run.setValidRows((int) readyRows);
+        run.setInvalidRows((int) preview.validations().stream().filter(result -> result.status() == ImportRowStatus.INVALID).count());
+        run.setDuplicateRows((int) preview.validations().stream().filter(result -> result.status() == ImportRowStatus.DUPLICATE).count());
+        run.setAttemptedRows(0);
+        run.setSkippedRows(0);
+        run.setImportedRows(0);
         applyExecutionOptions(run, options);
         run = importRunRepository.save(run);
 
         int processedSinceFlush = 0;
+        Instant lastFlushAt = Instant.now();
+        List<PreparedPaymentCreate> prepared = new ArrayList<>();
         for (PaymentRowValidationResult validation : preview.validations()) {
             ImportRowResultEntity rowEntity = buildRow(run, validation);
             if (mode == ImportExecutionMode.IMPORT_READY_ONLY && validation.status() != ImportRowStatus.READY) {
@@ -130,38 +159,58 @@ public class PaymentImportService {
                 run.getRowResults().add(rowEntity);
                 skipped++;
                 processedSinceFlush++;
-                if (processedSinceFlush >= 25) {
-                    run.setAttemptedRows(attempted);
-                    run.setSkippedRows(skipped);
-                    run.setImportedRows(imported);
-                    importRunRepository.save(run);
+                ImportRunProgressFlusher.ProgressFlushResult flushResult = flushProgress(
+                        run, attempted, skipped, imported, processedSinceFlush, lastFlushAt);
+                lastFlushAt = flushResult.lastFlushAt();
+                if (flushResult.flushed()) {
                     processedSinceFlush = 0;
                 }
                 continue;
             }
+            run.getRowResults().add(rowEntity);
+            attempted++;
             try {
-                attempted++;
                 NormalizedPayment payment = validation.payment();
                 QuickBooksInvoiceRef invoiceRef = quickBooksGateway.findInvoiceByDocNumber(realmId, payment.application().invoiceNo());
-                QuickBooksPaymentCreateResult created = quickBooksGateway.createPayment(realmId, payment, invoiceRef);
-                rowEntity.setStatus(ImportRowStatus.IMPORTED);
-                rowEntity.setCreatedEntityId(created.paymentId());
-                String label = created.paymentNumber() == null ? payment.referenceNo() : created.paymentNumber();
-                rowEntity.setMessage("Imported as QuickBooks payment " + label);
-                imported++;
+                prepared.add(new PreparedPaymentCreate(payment, rowEntity, invoiceRef));
             } catch (Exception exception) {
                 rowEntity.setStatus(ImportRowStatus.FAILED);
                 rowEntity.setMessage(exception.getMessage());
                 failed++;
+                processedSinceFlush++;
+                ImportRunProgressFlusher.ProgressFlushResult flushResult = flushProgress(
+                        run, attempted, skipped, imported, processedSinceFlush, lastFlushAt);
+                lastFlushAt = flushResult.lastFlushAt();
+                if (flushResult.flushed()) {
+                    processedSinceFlush = 0;
+                }
             }
-            run.getRowResults().add(rowEntity);
-            processedSinceFlush++;
-            if (processedSinceFlush >= 25) {
-                run.setAttemptedRows(attempted);
-                run.setSkippedRows(skipped);
-                run.setImportedRows(imported);
-                importRunRepository.save(run);
-                processedSinceFlush = 0;
+        }
+        if (!prepared.isEmpty()) {
+            List<QuickBooksBatchCreateResult> results = quickBooksGateway.createPaymentsBatch(
+                    realmId,
+                    prepared.stream().map(item -> new QuickBooksPaymentBatchCreateRequest(item.payment(), item.invoiceRef())).toList());
+            for (int index = 0; index < prepared.size(); index++) {
+                PreparedPaymentCreate item = prepared.get(index);
+                QuickBooksBatchCreateResult result = results.get(index);
+                if (result.success()) {
+                    item.row().setStatus(ImportRowStatus.IMPORTED);
+                    item.row().setCreatedEntityId(result.entityId());
+                    String label = result.referenceNumber() == null ? item.payment().referenceNo() : result.referenceNumber();
+                    item.row().setMessage("Imported as QuickBooks payment " + label);
+                    imported++;
+                } else {
+                    item.row().setStatus(ImportRowStatus.FAILED);
+                    item.row().setMessage(result.message());
+                    failed++;
+                }
+                processedSinceFlush++;
+                ImportRunProgressFlusher.ProgressFlushResult flushResult = flushProgress(
+                        run, attempted, skipped, imported, processedSinceFlush, lastFlushAt);
+                lastFlushAt = flushResult.lastFlushAt();
+                if (flushResult.flushed()) {
+                    processedSinceFlush = 0;
+                }
             }
         }
         run.setTotalRows(preview.rows().size());
@@ -263,5 +312,24 @@ public class PaymentImportService {
             return ImportExecutionMode.STRICT_ALL_ROWS;
         }
         return options.executionMode();
+    }
+
+    private ImportRunProgressFlusher.ProgressFlushResult flushProgress(ImportRunEntity run,
+                                                                       int attempted,
+                                                                       int skipped,
+                                                                       int imported,
+                                                                       int processedSinceFlush,
+                                                                       Instant lastFlushAt) {
+        return ImportRunProgressFlusher.flushProgress(
+                importRunRepository,
+                run,
+                attempted,
+                skipped,
+                imported,
+                processedSinceFlush,
+                lastFlushAt);
+    }
+
+    private record PreparedPaymentCreate(NormalizedPayment payment, ImportRowResultEntity row, QuickBooksInvoiceRef invoiceRef) {
     }
 }

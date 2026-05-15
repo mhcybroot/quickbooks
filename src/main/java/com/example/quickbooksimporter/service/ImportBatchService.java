@@ -102,17 +102,49 @@ public class ImportBatchService {
     }
 
     @Transactional
+    public ImportBatchEntity prepareBatchExecution(Long batchId, List<BatchFileRequest> files) {
+        ImportBatchEntity batch = importBatchRepository.findByIdAndCompanyId(batchId, currentCompanyService.requireCurrentCompanyId())
+                .orElseThrow(() -> new IllegalArgumentException("Batch not found"));
+        List<BatchFileRequest> ordered = orderedFiles(files);
+        batch.setStatus(ImportBatchStatus.RUNNING);
+        batch.setStartedAt(Instant.now());
+        batch.setCompletedAt(null);
+        batch.setPlannedTotalRows(ordered.stream()
+                .filter(file -> file.previewSummary() != null)
+                .mapToInt(file -> file.previewSummary().totalRows())
+                .sum());
+        batch.setPlannedRunnableRows(ordered.stream()
+                .filter(file -> file.previewSummary() != null)
+                .filter(file -> !file.previewSummary().hasBlockingIssues(file.skipInvalidRows()
+                        ? ImportExecutionMode.IMPORT_READY_ONLY
+                        : ImportExecutionMode.STRICT_ALL_ROWS))
+                .mapToInt(file -> file.skipInvalidRows() ? file.previewSummary().readyRows() : file.previewSummary().totalRows())
+                .sum());
+        batch.setRunnableFiles((int) ordered.stream()
+                .filter(file -> file.previewSummary() != null)
+                .filter(file -> !file.previewSummary().hasBlockingIssues(file.skipInvalidRows()
+                        ? ImportExecutionMode.IMPORT_READY_ONLY
+                        : ImportExecutionMode.STRICT_ALL_ROWS))
+                .count());
+        batch.setCompletedFiles(0);
+        batch.setValidatedFiles((int) ordered.stream().filter(file -> file.previewSummary() != null).count());
+        batch.setUpdatedAt(Instant.now());
+        return importBatchRepository.save(batch);
+    }
+
+    @Transactional
     public BatchExecutionReport executeBatch(Long batchId, List<BatchFileRequest> files) {
         ImportBatchEntity batch = importBatchRepository.findByIdAndCompanyId(batchId, currentCompanyService.requireCurrentCompanyId())
                 .orElseThrow(() -> new IllegalArgumentException("Batch not found"));
+        if (batch.getStartedAt() == null) {
+            batch.setStartedAt(Instant.now());
+        }
         batch.setStatus(ImportBatchStatus.RUNNING);
+        batch.setCompletedAt(null);
         batch.setUpdatedAt(Instant.now());
         importBatchRepository.save(batch);
 
-        List<BatchFileRequest> ordered = files.stream()
-                .sorted(Comparator.comparingInt((BatchFileRequest item) -> item.entityType().batchPriority())
-                        .thenComparingInt(BatchFileRequest::position))
-                .toList();
+        List<BatchFileRequest> ordered = orderedFiles(files);
 
         List<ImportExecutionResult> results = new ArrayList<>();
         int completedFiles = 0;
@@ -137,6 +169,9 @@ public class ImportBatchService {
                             file.skipInvalidRows() ? ImportExecutionMode.IMPORT_READY_ONLY : ImportExecutionMode.STRICT_ALL_ROWS));
             results.add(result);
             completedFiles++;
+            batch.setCompletedFiles(completedFiles);
+            batch.setUpdatedAt(Instant.now());
+            importBatchRepository.save(batch);
         }
 
         batch.setRunnableFiles(runnableFiles);
@@ -144,6 +179,7 @@ public class ImportBatchService {
         batch.setValidatedFiles((int) files.stream().filter(file -> file.previewSummary() != null).count());
         boolean allSucceeded = results.stream().allMatch(ImportExecutionResult::success);
         batch.setStatus(allSucceeded ? ImportBatchStatus.COMPLETED : ImportBatchStatus.COMPLETED_WITH_ERRORS);
+        batch.setCompletedAt(Instant.now());
         batch.setUpdatedAt(Instant.now());
         importBatchRepository.save(batch);
         return new BatchExecutionReport(batch, ordered, results);
@@ -151,6 +187,24 @@ public class ImportBatchService {
 
     public List<ImportBatchEntity> recentBatches() {
         return importBatchRepository.findTop20ByCompanyIdOrderByCreatedAtDesc(currentCompanyService.requireCurrentCompanyId());
+    }
+
+    @Transactional
+    public void markBatchFailed(Long batchId) {
+        importBatchRepository.findByIdAndCompanyId(batchId, currentCompanyService.requireCurrentCompanyId())
+                .ifPresent(batch -> {
+                    batch.setStatus(ImportBatchStatus.COMPLETED_WITH_ERRORS);
+                    batch.setCompletedAt(Instant.now());
+                    batch.setUpdatedAt(Instant.now());
+                    importBatchRepository.save(batch);
+                });
+    }
+
+    private List<BatchFileRequest> orderedFiles(List<BatchFileRequest> files) {
+        return files.stream()
+                .sorted(Comparator.comparingInt((BatchFileRequest item) -> item.entityType().batchPriority())
+                        .thenComparingInt(BatchFileRequest::position))
+                .toList();
     }
 
     private Set<String> successfulIdentifiers(List<ImportRunEntity> runs, EntityType entityType) {

@@ -96,6 +96,35 @@ class ImportBatchServiceTest {
         inOrder.verify(workflowFacade).execute(eq(EntityType.PAYMENT), eq("payment.csv"), eq("pay-profile"), eq(paymentPreview), any());
     }
 
+    @Test
+    void prepareBatchExecutionPersistsPlannedRowCounts() {
+        ImportBatchEntity batch = new ImportBatchEntity();
+        batch.setBatchName("Ops batch");
+        batch.setStatus(ImportBatchStatus.VALIDATED);
+        batch.setCreatedAt(Instant.now());
+        batch.setUpdatedAt(Instant.now());
+        Object invoicePreview = new Object();
+        Object paymentPreview = new Object();
+        ImportPreviewSummary invoiceSummary = new ImportPreviewSummary(
+                EntityType.INVOICE, "invoice.csv", List.of(), 10, 10, 0, 0, "csv", null, List.of(), invoicePreview);
+        ImportPreviewSummary paymentSummary = new ImportPreviewSummary(
+                EntityType.PAYMENT, "payment.csv", List.of(), 8, 5, 3, 0, null, null, List.of(), paymentPreview);
+
+        when(importBatchRepository.findByIdAndCompanyId(9L, 1L)).thenReturn(Optional.of(batch));
+        when(importBatchRepository.save(any(ImportBatchEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ImportBatchEntity prepared = service.prepareBatchExecution(9L, List.of(
+                new ImportBatchService.BatchFileRequest(1, EntityType.INVOICE, "invoice.csv", "inv-profile", invoiceSummary, false),
+                new ImportBatchService.BatchFileRequest(2, EntityType.PAYMENT, "payment.csv", "pay-profile", paymentSummary, true)));
+
+        assertEquals(18, prepared.getPlannedTotalRows());
+        assertEquals(15, prepared.getPlannedRunnableRows());
+        assertEquals(2, prepared.getRunnableFiles());
+        assertEquals(0, prepared.getCompletedFiles());
+        assertEquals(ImportBatchStatus.RUNNING, prepared.getStatus());
+        assertTrue(prepared.getStartedAt() != null);
+    }
+
     private ImportRunEntity run(String fileName, EntityType entityType) {
         ImportRunEntity run = new ImportRunEntity();
         run.setSourceFileName(fileName);

@@ -25,11 +25,15 @@ public interface QuickBooksGateway {
 
     QuickBooksInvoiceCreateResult createInvoice(String realmId, NormalizedInvoice invoice);
 
+    List<QuickBooksBatchCreateResult> createInvoicesBatch(String realmId, List<NormalizedInvoice> invoices);
+
     QuickBooksInvoiceRef findInvoiceByDocNumber(String realmId, String invoiceNo);
 
     boolean paymentExistsByReference(String realmId, String customerName, LocalDate paymentDate, String referenceNo);
 
     QuickBooksPaymentCreateResult createPayment(String realmId, NormalizedPayment payment, QuickBooksInvoiceRef invoiceRef);
+
+    List<QuickBooksBatchCreateResult> createPaymentsBatch(String realmId, List<QuickBooksPaymentBatchCreateRequest> payments);
 
     void ensureVendor(String realmId, String vendorName);
 
@@ -41,6 +45,8 @@ public interface QuickBooksGateway {
 
     QuickBooksExpenseCreateResult createExpense(String realmId, NormalizedExpense expense);
 
+    List<QuickBooksBatchCreateResult> createExpensesBatch(String realmId, List<NormalizedExpense> expenses);
+
     boolean customerExists(String realmId, String customerName);
 
     boolean taxCodeExists(String realmId, String taxCodeName);
@@ -51,15 +57,21 @@ public interface QuickBooksGateway {
 
     QuickBooksSalesReceiptCreateResult createSalesReceipt(String realmId, NormalizedSalesReceipt receipt);
 
+    List<QuickBooksBatchCreateResult> createSalesReceiptsBatch(String realmId, List<NormalizedSalesReceipt> receipts);
+
     boolean billExistsByDocNumber(String realmId, String docNumber);
 
     QuickBooksBillCreateResult createBill(String realmId, NormalizedBill bill);
+
+    List<QuickBooksBatchCreateResult> createBillsBatch(String realmId, List<NormalizedBill> bills);
 
     QuickBooksBillRef findBillByDocNumber(String realmId, String billNo);
 
     boolean billPaymentExists(String realmId, String vendorName, LocalDate paymentDate, String referenceNo, BigDecimal amount);
 
     QuickBooksPaymentCreateResult createBillPayment(String realmId, NormalizedBillPayment payment, QuickBooksBillRef billRef);
+
+    List<QuickBooksBatchCreateResult> createBillPaymentsBatch(String realmId, List<QuickBooksBillPaymentBatchCreateRequest> payments);
 
     List<QboTransactionRow> listTransactions(String realmId, QboCleanupEntityType type, QboCleanupFilter filter, Integer startPosition);
 

@@ -1,12 +1,18 @@
 package com.example.quickbooksimporter.ui;
 
 import com.example.quickbooksimporter.persistence.ReconciliationSessionEntity;
+import com.example.quickbooksimporter.domain.AppJobStatus;
+import com.example.quickbooksimporter.service.AppJobService;
+import com.example.quickbooksimporter.service.AppJobSnapshot;
 import com.example.quickbooksimporter.service.InvoiceCsvParser;
 import com.example.quickbooksimporter.service.ParsedCsvDocument;
 import com.example.quickbooksimporter.service.ReconciliationApplyResult;
+import com.example.quickbooksimporter.service.ReconciliationApplyJobResult;
 import com.example.quickbooksimporter.service.ReconciliationMatchResult;
 import com.example.quickbooksimporter.service.ReconciliationPreview;
+import com.example.quickbooksimporter.service.ReconciliationPreviewJobResult;
 import com.example.quickbooksimporter.service.ReconciliationService;
+import com.example.quickbooksimporter.service.QuickBooksJobService;
 import com.example.quickbooksimporter.ui.components.UiComponents;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.checkbox.Checkbox;
@@ -22,6 +28,7 @@ import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.upload.Upload;
 import com.vaadin.flow.component.upload.receivers.MemoryBuffer;
+import com.vaadin.flow.component.AttachEvent;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 import com.vaadin.flow.server.StreamResource;
@@ -38,6 +45,8 @@ public class ReconciliationView extends VerticalLayout {
 
     private final InvoiceCsvParser parser;
     private final ReconciliationService reconciliationService;
+    private final QuickBooksJobService quickBooksJobService;
+    private final AppJobService appJobService;
 
     private final MemoryBuffer uploadBuffer = new MemoryBuffer();
     private final Upload upload = new Upload(uploadBuffer);
@@ -56,15 +65,25 @@ public class ReconciliationView extends VerticalLayout {
     private final Grid<ReconciliationMatchResult> bankOnlyGrid = new Grid<>(ReconciliationMatchResult.class, false);
     private final Paragraph summary = new Paragraph("Upload bank statement CSV to begin.");
     private final Anchor downloadReport = new Anchor();
+    private final Button previewButton = new Button("Preview Matches");
+    private final Button applyButton = new Button("Apply to QuickBooks");
 
     private byte[] uploadedBytes;
     private String uploadedFileName;
     private Long currentSessionId;
+    private Long previewJobId;
+    private Long applyJobId;
     private ReconciliationPreview currentPreview;
+    private boolean pollListenerRegistered;
 
-    public ReconciliationView(InvoiceCsvParser parser, ReconciliationService reconciliationService) {
+    public ReconciliationView(InvoiceCsvParser parser,
+                              ReconciliationService reconciliationService,
+                              QuickBooksJobService quickBooksJobService,
+                              AppJobService appJobService) {
         this.parser = parser;
         this.reconciliationService = reconciliationService;
+        this.quickBooksJobService = quickBooksJobService;
+        this.appJobService = appJobService;
 
         addClassName("corp-page");
         setSizeFull();
@@ -75,6 +94,18 @@ public class ReconciliationView extends VerticalLayout {
         configureMapping();
         configureGrids();
         configureActions();
+    }
+
+    @Override
+    protected void onAttach(AttachEvent attachEvent) {
+        super.onAttach(attachEvent);
+        if (!pollListenerRegistered) {
+            attachEvent.getUI().addPollListener(event -> {
+                refreshPreviewJob();
+                refreshApplyJob();
+            });
+            pollListenerRegistered = true;
+        }
     }
 
     private void configureUpload() {
@@ -139,14 +170,14 @@ public class ReconciliationView extends VerticalLayout {
     }
 
     private void configureActions() {
-        Button preview = new Button("Preview Matches", event -> preview());
-        Button apply = new Button("Apply to QuickBooks", event -> apply());
-        preview.addThemeName("primary");
-        apply.addThemeName("error");
+        previewButton.addClickListener(event -> preview());
+        applyButton.addClickListener(event -> apply());
+        previewButton.addThemeName("primary");
+        applyButton.addThemeName("error");
         downloadReport.setText("Download Reconciliation Report");
         downloadReport.setVisible(false);
         downloadReport.getElement().setAttribute("download", true);
-        add(UiComponents.card(UiComponents.sectionTitle("Stage 4: Execute"), new HorizontalLayout(preview, apply, downloadReport)));
+        add(UiComponents.card(UiComponents.sectionTitle("Stage 4: Execute"), new HorizontalLayout(previewButton, applyButton, downloadReport)));
     }
 
     private void preview() {
@@ -170,16 +201,11 @@ public class ReconciliationView extends VerticalLayout {
                 referenceHeader.getValue(),
                 memoHeader.getValue(),
                 counterpartyHeader.getValue());
-        ReconciliationPreview preview = reconciliationService.previewMatches(uploadedFileName, uploadedBytes, mapping, dryRun.getValue(), 20);
-        currentPreview = preview;
-        currentSessionId = preview.sessionId();
-        autoGrid.setItems(preview.autoMatched());
-        reviewGrid.setItems(preview.needsReview());
-        bankOnlyGrid.setItems(preview.bankOnly());
-        summary.setText("Session " + currentSessionId + ": auto=" + preview.autoMatched().size() + ", review="
-                + preview.needsReview().size() + ", bank-only=" + preview.bankOnly().size() + ", qbo-only=" + preview.qboOnly().size());
-        refreshModeFilter();
-        configureDownload();
+        previewButton.setEnabled(false);
+        previewJobId = quickBooksJobService.enqueueReconciliationPreview(
+                new QuickBooksJobService.ReconciliationPreviewRequest(uploadedFileName, uploadedBytes, mapping, dryRun.getValue(), 20)).getId();
+        summary.setText("Reconciliation preview started in the background.");
+        getUI().ifPresent(ui -> ui.setPollInterval(3000));
     }
 
     private void apply() {
@@ -194,13 +220,10 @@ public class ReconciliationView extends VerticalLayout {
         List<Integer> selectedReviewRows = new ArrayList<>(reviewGrid.getSelectedItems().stream()
                 .map(ReconciliationMatchResult::bankRowNumber)
                 .toList());
-        ReconciliationApplyResult result = reconciliationService.applyMatches(currentSessionId, selectedReviewRows);
-        if (result.success()) {
-            notifySuccess(result.message());
-        } else {
-            notifyWarning(result.message());
-        }
-        configureDownload();
+        applyButton.setEnabled(false);
+        applyJobId = quickBooksJobService.enqueueReconciliationApply(currentSessionId, selectedReviewRows).getId();
+        summary.setText("Reconciliation apply started in the background.");
+        getUI().ifPresent(ui -> ui.setPollInterval(3000));
     }
 
     private void refreshModeFilter() {
@@ -258,5 +281,77 @@ public class ReconciliationView extends VerticalLayout {
     private void notifyWarning(String message) {
         Notification notification = Notification.show(message);
         notification.addThemeVariants(NotificationVariant.LUMO_WARNING);
+    }
+
+    private void refreshPreviewJob() {
+        if (previewJobId != null) {
+            appJobService.findSnapshot(previewJobId).ifPresent(this::applyPreviewSnapshot);
+        }
+    }
+
+    private void applyPreviewSnapshot(AppJobSnapshot snapshot) {
+        if (snapshot.status() == AppJobStatus.QUEUED || snapshot.status() == AppJobStatus.RUNNING) {
+            summary.setText(snapshot.summaryMessage());
+            return;
+        }
+        previewButton.setEnabled(true);
+        if (snapshot.status() == AppJobStatus.FAILED) {
+            summary.setText("Preview failed: " + snapshot.summaryMessage());
+            notifyWarning("Preview failed: " + snapshot.summaryMessage());
+            previewJobId = null;
+            stopPollingIfIdle();
+            return;
+        }
+        ReconciliationPreviewJobResult result = appJobService.readResult(snapshot.resultPayload(), ReconciliationPreviewJobResult.class);
+        ReconciliationPreview preview = result.preview();
+        currentPreview = preview;
+        currentSessionId = preview.sessionId();
+        autoGrid.setItems(preview.autoMatched());
+        reviewGrid.setItems(preview.needsReview());
+        bankOnlyGrid.setItems(preview.bankOnly());
+        summary.setText("Session " + currentSessionId + ": auto=" + preview.autoMatched().size() + ", review="
+                + preview.needsReview().size() + ", bank-only=" + preview.bankOnly().size() + ", qbo-only=" + preview.qboOnly().size());
+        refreshModeFilter();
+        configureDownload();
+        previewJobId = null;
+        stopPollingIfIdle();
+    }
+
+    private void refreshApplyJob() {
+        if (applyJobId != null) {
+            appJobService.findSnapshot(applyJobId).ifPresent(this::applyApplySnapshot);
+        }
+    }
+
+    private void applyApplySnapshot(AppJobSnapshot snapshot) {
+        if (snapshot.status() == AppJobStatus.QUEUED || snapshot.status() == AppJobStatus.RUNNING) {
+            summary.setText(snapshot.summaryMessage());
+            return;
+        }
+        applyButton.setEnabled(true);
+        if (snapshot.status() == AppJobStatus.FAILED) {
+            summary.setText("Apply failed: " + snapshot.summaryMessage());
+            notifyWarning("Apply failed: " + snapshot.summaryMessage());
+            applyJobId = null;
+            stopPollingIfIdle();
+            return;
+        }
+        ReconciliationApplyJobResult result = appJobService.readResult(snapshot.resultPayload(), ReconciliationApplyJobResult.class);
+        ReconciliationApplyResult applyResult = result.result();
+        if (applyResult.success()) {
+            notifySuccess(applyResult.message());
+        } else {
+            notifyWarning(applyResult.message());
+        }
+        summary.setText(applyResult.message());
+        configureDownload();
+        applyJobId = null;
+        stopPollingIfIdle();
+    }
+
+    private void stopPollingIfIdle() {
+        if (previewJobId == null && applyJobId == null) {
+            getUI().ifPresent(ui -> ui.setPollInterval(-1));
+        }
     }
 }

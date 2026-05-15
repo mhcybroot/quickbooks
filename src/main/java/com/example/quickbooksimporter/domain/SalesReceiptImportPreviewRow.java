@@ -6,5 +6,5 @@ public record SalesReceiptImportPreviewRow(
         String customer,
         int lineCount,
         ImportRowStatus status,
-        String message) {
+        String message) implements com.example.quickbooksimporter.service.ImportPreviewSummary.ImportPreviewStatusRow {
 }

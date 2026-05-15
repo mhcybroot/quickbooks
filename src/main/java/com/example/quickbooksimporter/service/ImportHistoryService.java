@@ -49,6 +49,12 @@ public class ImportHistoryService {
         return importRunRepository.findTop100ByCompanyIdOrderByCreatedAtDesc(currentCompanyService.requireCurrentCompanyId());
     }
 
+    public List<ImportRunEntity> recentCompletedRuns() {
+        return recentRuns().stream()
+                .filter(run -> run.getCompletedAt() != null && run.getAttemptedRows() > 0)
+                .toList();
+    }
+
     public List<ImportBatchEntity> recentBatches() {
         return importBatchRepository.findTop20ByCompanyIdOrderByCreatedAtDesc(currentCompanyService.requireCurrentCompanyId());
     }
@@ -75,6 +81,13 @@ public class ImportHistoryService {
                 entityType,
                 sourceFileName,
                 currentCompanyService.requireCurrentCompanyId());
+    }
+
+    public Optional<ImportBatchEntity> findBatch(Long batchId) {
+        if (batchId == null) {
+            return Optional.empty();
+        }
+        return importBatchRepository.findWithRunsByIdAndCompanyId(batchId, currentCompanyService.requireCurrentCompanyId());
     }
 
     public String buildRunExportCsv(ImportRunEntity run) {
