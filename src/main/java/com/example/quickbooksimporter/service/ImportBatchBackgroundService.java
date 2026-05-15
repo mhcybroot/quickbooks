@@ -16,7 +16,7 @@ public class ImportBatchBackgroundService {
     private final CurrentCompanyService currentCompanyService;
 
     public ImportBatchBackgroundService(ImportBatchService importBatchService,
-                                        CurrentCompanyService currentCompanyService) {
+            CurrentCompanyService currentCompanyService) {
         this.importBatchService = importBatchService;
         this.currentCompanyService = currentCompanyService;
     }

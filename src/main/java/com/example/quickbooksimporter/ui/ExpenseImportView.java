@@ -79,25 +79,27 @@ public class ExpenseImportView extends VerticalLayout {
     private final ProgressBar progressBar = new ProgressBar();
     private final Button previewButton = new Button("Preview & Validate");
 
-    private final Map<NormalizedExpenseField, ComboBox<String>> fieldSelectors = new EnumMap<>(NormalizedExpenseField.class);
+    private final Map<NormalizedExpenseField, ComboBox<String>> fieldSelectors = new EnumMap<>(
+            NormalizedExpenseField.class);
 
     private byte[] uploadedBytes;
     private String uploadedFileName;
     private String trackingFileName;
+    private Long trackingRunId;
     private Long previewJobId;
     private List<String> currentHeaders = List.of();
     private ExpenseImportPreview currentPreview;
     private boolean pollListenerRegistered;
 
     public ExpenseImportView(InvoiceCsvParser parser,
-                             ExpenseMappingProfileService mappingProfileService,
-                             ExpenseImportService expenseImportService,
-                             ImportBackgroundService backgroundService,
-                             ImportHistoryService importHistoryService,
-                             ImportProgressService importProgressService,
-                             QuickBooksJobService quickBooksJobService,
-                             AppJobService appJobService,
-                             ImportPreviewJobCodec importPreviewJobCodec) {
+            ExpenseMappingProfileService mappingProfileService,
+            ExpenseImportService expenseImportService,
+            ImportBackgroundService backgroundService,
+            ImportHistoryService importHistoryService,
+            ImportProgressService importProgressService,
+            QuickBooksJobService quickBooksJobService,
+            AppJobService appJobService,
+            ImportPreviewJobCodec importPreviewJobCodec) {
         this.parser = parser;
         this.mappingProfileService = mappingProfileService;
         this.expenseImportService = expenseImportService;
@@ -123,7 +125,10 @@ public class ExpenseImportView extends VerticalLayout {
     protected void onAttach(AttachEvent attachEvent) {
         super.onAttach(attachEvent);
         if (!pollListenerRegistered) {
-            attachEvent.getUI().addPollListener(event -> { refreshPreviewJob(); refreshBackgroundProgress(); });
+            attachEvent.getUI().addPollListener(event -> {
+                refreshPreviewJob();
+                refreshBackgroundProgress();
+            });
             pollListenerRegistered = true;
         }
     }
@@ -172,7 +177,8 @@ public class ExpenseImportView extends VerticalLayout {
     }
 
     private void configureMappingForm() {
-        mappingForm.setResponsiveSteps(new FormLayout.ResponsiveStep("0", 1), new FormLayout.ResponsiveStep("800px", 2));
+        mappingForm.setResponsiveSteps(new FormLayout.ResponsiveStep("0", 1),
+                new FormLayout.ResponsiveStep("800px", 2));
         for (NormalizedExpenseField field : NormalizedExpenseField.values()) {
             ComboBox<String> selector = new ComboBox<>(field.name());
             selector.setWidthFull();
@@ -197,18 +203,22 @@ public class ExpenseImportView extends VerticalLayout {
         progressBar.setWidthFull();
         progressBar.setVisible(false);
         progressDetails.setVisible(false);
-        add(UiComponents.card(new H3("Stage 4: Validation Preview"), summary, progressSummary, progressBar, progressDetails, previewFilter, previewGrid));
+        add(UiComponents.card(new H3("Stage 4: Validation Preview"), summary, progressSummary, progressBar,
+                progressDetails, previewFilter, previewGrid));
     }
 
     private void configureActions() {
         previewButton.addClickListener(event -> previewImport());
         Button saveProfileButton = new Button("Save Mapping Profile", event -> saveProfile());
-        Button importButton = new Button("Import Expenses", event -> importPreview(ImportExecutionMode.STRICT_ALL_ROWS));
-        Button importReadyOnlyButton = new Button("Import Ready Rows Only", event -> importPreview(ImportExecutionMode.IMPORT_READY_ONLY));
+        Button importButton = new Button("Import Expenses",
+                event -> importPreview(ImportExecutionMode.STRICT_ALL_ROWS));
+        Button importReadyOnlyButton = new Button("Import Ready Rows Only",
+                event -> importPreview(ImportExecutionMode.IMPORT_READY_ONLY));
         Button historyButton = new Button("Open History", event -> UI.getCurrent().navigate(ImportHistoryView.class));
         previewButton.addThemeName("primary");
         importButton.addThemeName("primary");
-        HorizontalLayout actions = new HorizontalLayout(previewButton, saveProfileButton, importButton, importReadyOnlyButton, historyButton);
+        HorizontalLayout actions = new HorizontalLayout(previewButton, saveProfileButton, importButton,
+                importReadyOnlyButton, historyButton);
         actions.addClassName("corp-action-bar");
         add(UiComponents.card(UiComponents.sectionTitle("Stage 5: Execute"), actions));
     }
@@ -224,7 +234,8 @@ public class ExpenseImportView extends VerticalLayout {
                 new QuickBooksJobService.ImportPreviewRequest(
                         uploadedFileName, uploadedBytes,
                         txnDateFormat.getValue() == null ? DateFormatOption.AUTO : txnDateFormat.getValue(),
-                        false, Map.of(), Map.of(), currentMapping(), Map.of(), Map.of(), Map.of(), Map.of())).getId();
+                        false, Map.of(), Map.of(), currentMapping(), Map.of(), Map.of(), Map.of(), Map.of()))
+                .getId();
         summary.setText("Preview started in background. You can keep using the page while validation runs.");
         progressSummary.setText("Preview job is queued.");
         progressDetails.setText("QuickBooks validation checks will update here.");
@@ -249,7 +260,7 @@ public class ExpenseImportView extends VerticalLayout {
             notifyWarning("Run preview first.");
             return;
         }
-        backgroundService.enqueueForCurrentCompany(
+        trackingRunId = backgroundService.enqueueForCurrentCompany(
                 com.example.quickbooksimporter.domain.EntityType.EXPENSE,
                 uploadedFileName,
                 savedProfiles.getOptionalValue().map(MappingProfileSummary::name).orElse(profileName.getValue()),
@@ -294,11 +305,15 @@ public class ExpenseImportView extends VerticalLayout {
     }
 
     private void refreshBackgroundProgress() {
-        if (trackingFileName == null || trackingFileName.isBlank()) {
-            return;
+        if (trackingRunId != null) {
+            importProgressService.findRunProgress(trackingRunId)
+                    .ifPresent(this::applyRunProgress);
+        } else if (trackingFileName != null && !trackingFileName.isBlank()) {
+            importProgressService
+                    .findLatestRunProgressForFile(com.example.quickbooksimporter.domain.EntityType.EXPENSE,
+                            trackingFileName)
+                    .ifPresent(this::applyRunProgress);
         }
-        importProgressService.findLatestRunProgressForFile(com.example.quickbooksimporter.domain.EntityType.EXPENSE, trackingFileName)
-                .ifPresent(this::applyRunProgress);
     }
 
     private void applyRunProgress(ImportRunProgressSnapshot snapshot) {
@@ -306,7 +321,8 @@ public class ExpenseImportView extends VerticalLayout {
         progressDetails.setVisible(true);
         progressBar.setIndeterminate(false);
         progressBar.setValue(snapshot.progressValue());
-        progressSummary.setText("Run #" + snapshot.runId() + " is " + snapshot.status() + " | " + snapshot.percentLabel());
+        progressSummary
+                .setText("Run #" + snapshot.runId() + " is " + snapshot.status() + " | " + snapshot.percentLabel());
         progressDetails.setText(snapshot.processedRows() + "/" + snapshot.runnableRows() + " runnable rows"
                 + " | imported=" + snapshot.importedRows()
                 + " | skipped=" + snapshot.skippedRows()
@@ -315,6 +331,7 @@ public class ExpenseImportView extends VerticalLayout {
                 + " | " + snapshot.startedLabel());
         if (snapshot.status() != ImportRunStatus.QUEUED && snapshot.status() != ImportRunStatus.RUNNING) {
             trackingFileName = null;
+            trackingRunId = null;
             stopPollingIfIdle();
         }
     }
@@ -333,7 +350,8 @@ public class ExpenseImportView extends VerticalLayout {
             if (!progressBar.isIndeterminate()) {
                 progressBar.setValue(snapshot.progressValue());
             }
-            progressSummary.setText(snapshot.description() + " is " + snapshot.status() + " | " + snapshot.percentLabel());
+            progressSummary
+                    .setText(snapshot.description() + " is " + snapshot.status() + " | " + snapshot.percentLabel());
             progressDetails.setText(snapshot.summaryMessage());
             return;
         }
@@ -348,7 +366,8 @@ public class ExpenseImportView extends VerticalLayout {
             stopPollingIfIdle();
             return;
         }
-        ImportPreviewJobResult result = appJobService.readResult(snapshot.resultPayload(), ImportPreviewJobResult.class);
+        ImportPreviewJobResult result = appJobService.readResult(snapshot.resultPayload(),
+                ImportPreviewJobResult.class);
         currentPreview = importPreviewJobCodec.readExpensePreview(result);
         applyPreviewFilter();
         summary.setText("Preview complete: " + result.readyRows() + " ready, " + result.invalidRows()
@@ -362,7 +381,7 @@ public class ExpenseImportView extends VerticalLayout {
     }
 
     private void stopPollingIfIdle() {
-        if (previewJobId == null && (trackingFileName == null || trackingFileName.isBlank())) {
+        if (previewJobId == null && (trackingFileName == null || trackingFileName.isBlank()) && trackingRunId == null) {
             getUI().ifPresent(ui -> ui.setPollInterval(-1));
         }
     }

@@ -28,7 +28,8 @@ public class ImportProgressService {
         this.importHistoryService = importHistoryService;
     }
 
-    public Optional<ImportRunProgressSnapshot> findLatestRunProgressForFile(EntityType entityType, String sourceFileName) {
+    public Optional<ImportRunProgressSnapshot> findLatestRunProgressForFile(EntityType entityType,
+            String sourceFileName) {
         return importHistoryService.findLatestRunForFile(entityType, sourceFileName)
                 .map(this::toRunSnapshot);
     }
@@ -77,7 +78,8 @@ public class ImportProgressService {
                 : Math.min((double) processedRows / runnableRows, 1d);
         ImportRunEntity activeRun = runs.stream()
                 .filter(run -> run.getStatus() == ImportRunStatus.RUNNING)
-                .sorted(Comparator.comparing(ImportRunEntity::getBatchOrder, Comparator.nullsLast(Comparator.naturalOrder()))
+                .sorted(Comparator
+                        .comparing(ImportRunEntity::getBatchOrder, Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(ImportRunEntity::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())))
                 .findFirst()
                 .orElse(null);
@@ -106,11 +108,14 @@ public class ImportProgressService {
         Instant endedAt = run.getCompletedAt();
         Instant now = endedAt != null ? endedAt : Instant.now();
         double liveThroughput = throughput(processedRows, startedAt, now);
-        boolean canUseLive = processedRows >= LIVE_ROWS_THRESHOLD && secondsBetween(startedAt, now) >= LIVE_SECONDS_THRESHOLD && liveThroughput > 0;
+        boolean canUseLive = processedRows >= LIVE_ROWS_THRESHOLD
+                && secondsBetween(startedAt, now) >= LIVE_SECONDS_THRESHOLD && liveThroughput > 0;
         double historicalThroughput = historicalEntityThroughput(run.getEntityType());
         int remainingRows = Math.max(runnableRows - processedRows, 0);
         if (isTerminal(run.getStatus())) {
-            return new EtaEstimate(liveThroughput > 0 ? liveThroughput : historicalThroughput, 0L, liveThroughput > 0, false, false, "Completed", throughputLabel(liveThroughput > 0 ? liveThroughput : historicalThroughput));
+            return new EtaEstimate(liveThroughput > 0 ? liveThroughput : historicalThroughput, 0L, liveThroughput > 0,
+                    false, false, "Completed",
+                    throughputLabel(liveThroughput > 0 ? liveThroughput : historicalThroughput));
         }
         if (canUseLive) {
             return estimateFromThroughput(liveThroughput, remainingRows, true, false);
@@ -121,18 +126,22 @@ public class ImportProgressService {
         return new EtaEstimate(0, null, false, false, true, "Estimating...", "Estimating throughput...");
     }
 
-    EtaEstimate estimateForBatch(ImportBatchEntity batch, int processedRows, int runnableRows, ImportRunEntity activeRun) {
+    EtaEstimate estimateForBatch(ImportBatchEntity batch, int processedRows, int runnableRows,
+            ImportRunEntity activeRun) {
         Instant startedAt = batch.getStartedAt();
         Instant endedAt = batch.getCompletedAt();
         Instant now = endedAt != null ? endedAt : Instant.now();
         double liveThroughput = throughput(processedRows, startedAt, now);
-        boolean canUseLive = processedRows >= LIVE_ROWS_THRESHOLD && secondsBetween(startedAt, now) >= LIVE_SECONDS_THRESHOLD && liveThroughput > 0;
+        boolean canUseLive = processedRows >= LIVE_ROWS_THRESHOLD
+                && secondsBetween(startedAt, now) >= LIVE_SECONDS_THRESHOLD && liveThroughput > 0;
         double historicalThroughput = activeRun != null && activeRun.getEntityType() != null
                 ? historicalEntityThroughput(activeRun.getEntityType())
                 : historicalOverallThroughput();
         int remainingRows = Math.max(runnableRows - processedRows, 0);
         if (terminalBatch(batch.getStatus())) {
-            return new EtaEstimate(liveThroughput > 0 ? liveThroughput : historicalThroughput, 0L, liveThroughput > 0, false, false, "Completed", throughputLabel(liveThroughput > 0 ? liveThroughput : historicalThroughput));
+            return new EtaEstimate(liveThroughput > 0 ? liveThroughput : historicalThroughput, 0L, liveThroughput > 0,
+                    false, false, "Completed",
+                    throughputLabel(liveThroughput > 0 ? liveThroughput : historicalThroughput));
         }
         if (canUseLive) {
             return estimateFromThroughput(liveThroughput, remainingRows, true, false);
@@ -143,11 +152,14 @@ public class ImportProgressService {
         return new EtaEstimate(0, null, false, false, true, "Estimating...", "Estimating throughput...");
     }
 
-    private EtaEstimate estimateFromThroughput(double throughputRowsPerSecond, int remainingRows, boolean live, boolean historical) {
+    private EtaEstimate estimateFromThroughput(double throughputRowsPerSecond, int remainingRows, boolean live,
+            boolean historical) {
         if (throughputRowsPerSecond <= 0) {
-            return new EtaEstimate(throughputRowsPerSecond, null, false, false, true, "Estimating...", "Estimating throughput...");
+            return new EtaEstimate(throughputRowsPerSecond, null, false, false, true, "Estimating...",
+                    "Estimating throughput...");
         }
-        long remainingSeconds = remainingRows <= 0 ? 0L : Math.max(1L, Math.round(remainingRows / throughputRowsPerSecond));
+        long remainingSeconds = remainingRows <= 0 ? 0L
+                : Math.max(1L, Math.round(remainingRows / throughputRowsPerSecond));
         return new EtaEstimate(
                 throughputRowsPerSecond,
                 remainingSeconds,
@@ -181,7 +193,8 @@ public class ImportProgressService {
     }
 
     private double completedThroughput(ImportRunEntity run) {
-        return throughput(Math.min(run.getAttemptedRows(), runnableRows(run)), run.getCreatedAt(), run.getCompletedAt());
+        return throughput(Math.min(run.getAttemptedRows(), runnableRows(run)), run.getCreatedAt(),
+                run.getCompletedAt());
     }
 
     private double throughput(int processedRows, Instant startedAt, Instant endedAt) {

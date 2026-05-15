@@ -99,14 +99,14 @@ public class BatchImportView extends VerticalLayout {
     private boolean pollListenerRegistered;
 
     public BatchImportView(ImportWorkflowFacade workflowFacade,
-                           ImportBatchService batchService,
-                           ImportBatchBackgroundService batchBackgroundService,
-                           ImportHistoryService importHistoryService,
-                           ImportProgressService importProgressService,
-                           QuickBooksConnectionService connectionService,
-                           QuickBooksJobService quickBooksJobService,
-                           AppJobService appJobService,
-                           ImportPreviewJobCodec importPreviewJobCodec) {
+            ImportBatchService batchService,
+            ImportBatchBackgroundService batchBackgroundService,
+            ImportHistoryService importHistoryService,
+            ImportProgressService importProgressService,
+            QuickBooksConnectionService connectionService,
+            QuickBooksJobService quickBooksJobService,
+            AppJobService appJobService,
+            ImportPreviewJobCodec importPreviewJobCodec) {
         this.workflowFacade = workflowFacade;
         this.batchService = batchService;
         this.batchBackgroundService = batchBackgroundService;
@@ -128,7 +128,8 @@ public class BatchImportView extends VerticalLayout {
 
         try {
             add(new H2("Batch Import Workspace"),
-                    new Paragraph("Upload multiple files, validate them together, and run them in dependency-aware order."),
+                    new Paragraph(
+                            "Upload multiple files, validate them together, and run them in dependency-aware order."),
                     UiComponents.importStepper("Upload"));
             add(buildConnectionCard());
             configureUpload();
@@ -142,8 +143,10 @@ public class BatchImportView extends VerticalLayout {
                     new Paragraph("The batch workspace could not be initialized fully."),
                     UiComponents.card(
                             new H3("Initialization Error"),
-                            new Paragraph(exception.getClass().getSimpleName() + ": " + String.valueOf(exception.getMessage())),
-                            new Paragraph("Open the single-import screens or import history while this page is being corrected.")));
+                            new Paragraph(exception.getClass().getSimpleName() + ": "
+                                    + String.valueOf(exception.getMessage())),
+                            new Paragraph(
+                                    "Open the single-import screens or import history while this page is being corrected.")));
         }
     }
 
@@ -162,7 +165,8 @@ public class BatchImportView extends VerticalLayout {
     private VerticalLayout buildConnectionCard() {
         HorizontalLayout kpis = new HorizontalLayout(
                 UiComponents.kpi("Connection", connectionStatus.connected() ? "Active" : "Blocked",
-                        connectionStatus.connected() ? "QuickBooks is ready for run-all execution" : "Connect QuickBooks before batch import"),
+                        connectionStatus.connected() ? "QuickBooks is ready for run-all execution"
+                                : "Connect QuickBooks before batch import"),
                 UiComponents.kpi("Files In Queue", String.valueOf(items.size()), "Current in-memory draft batch"),
                 UiComponents.kpi("Validation Mode", "Partial", "Invalid files stay blocked while valid files continue"),
                 UiComponents.kpi("Execution Order", "Auto", "Invoices before payments, bills before bill payments"));
@@ -196,7 +200,8 @@ public class BatchImportView extends VerticalLayout {
         grid.addColumn(BatchDraftItem::getPosition).setHeader("#").setAutoWidth(true);
         grid.addColumn(BatchDraftItem::getFileName).setHeader("File").setAutoWidth(true).setFlexGrow(1);
         grid.addColumn(item -> item.getEntityType().displayName()).setHeader("Entity").setAutoWidth(true);
-        grid.addColumn(item -> item.getSelectedProfile() == null ? "Auto / default" : item.getSelectedProfile().name()).setHeader("Profile").setAutoWidth(true);
+        grid.addColumn(item -> item.getSelectedProfile() == null ? "Auto / default" : item.getSelectedProfile().name())
+                .setHeader("Profile").setAutoWidth(true);
         grid.addColumn(BatchDraftItem::getRowSummary).setHeader("Rows").setAutoWidth(true);
         grid.addColumn(BatchDraftItem::getStatusText).setHeader("Validation").setAutoWidth(true);
         grid.addColumn(BatchDraftItem::getRunStatusText).setHeader("Run").setAutoWidth(true);
@@ -351,9 +356,12 @@ public class BatchImportView extends VerticalLayout {
                 new ImportPreviewOptions(null, draftInvoiceRefs));
         item.setPreviewSummary(preview);
         item.setStatusText(preview.runStatusSummary(
-                skipInvalidRows.getValue() ? com.example.quickbooksimporter.service.ImportExecutionMode.IMPORT_READY_ONLY
-                        : com.example.quickbooksimporter.service.ImportExecutionMode.STRICT_ALL_ROWS).name());
-        item.setRowSummary(preview.totalRows() + " total / " + preview.readyRows() + " ready / " + preview.invalidRows() + " invalid");
+                skipInvalidRows.getValue()
+                        ? com.example.quickbooksimporter.service.ImportExecutionMode.IMPORT_READY_ONLY
+                        : com.example.quickbooksimporter.service.ImportExecutionMode.STRICT_ALL_ROWS)
+                .name());
+        item.setRowSummary(preview.totalRows() + " total / " + preview.readyRows() + " ready / " + preview.invalidRows()
+                + " invalid");
         item.setWarningText(preview.warnings().isEmpty() ? "Validated." : String.join(" | ", preview.warnings()));
         if (item.getSelectedProfile() == null && preview.suggestedProfileName() != null) {
             workflowFacade.listProfiles(item.getEntityType()).stream()
@@ -389,31 +397,34 @@ public class BatchImportView extends VerticalLayout {
     private void refreshDetailPanel() {
         syncingDetailFields = true;
         try {
-        if (selectedItem == null) {
-            detailSummary.setText("Select a file to review and validate it.");
-            entityType.clear();
-            profile.clear();
-            profile.setItems(List.of());
-            downloadAnchor.setVisible(false);
-            return;
-        }
-        entityType.setValue(selectedItem.getEntityType());
-        loadProfiles(selectedItem.getEntityType());
-        if (selectedItem.getSelectedProfile() != null
-                && workflowFacade.listProfiles(selectedItem.getEntityType()).stream()
-                .anyMatch(candidate -> Objects.equals(candidate.id(), selectedItem.getSelectedProfile().id()))) {
-            profile.setValue(selectedItem.getSelectedProfile());
-        } else {
-            profile.clear();
-        }
-        detailSummary.setText(selectedItem.getFileName() + " | " + selectedItem.getStatusText() + " | " + selectedItem.getRowSummary());
-        if (selectedItem.getPreviewSummary() != null && selectedItem.getPreviewSummary().exportCsv() != null) {
-            downloadAnchor.setHref(new StreamResource("normalized-" + selectedItem.getFileName(),
-                    () -> new ByteArrayInputStream(selectedItem.getPreviewSummary().exportCsv().getBytes(StandardCharsets.UTF_8))));
-            downloadAnchor.setVisible(true);
-        } else {
-            downloadAnchor.setVisible(false);
-        }
+            if (selectedItem == null) {
+                detailSummary.setText("Select a file to review and validate it.");
+                entityType.clear();
+                profile.clear();
+                profile.setItems(List.of());
+                downloadAnchor.setVisible(false);
+                return;
+            }
+            entityType.setValue(selectedItem.getEntityType());
+            loadProfiles(selectedItem.getEntityType());
+            if (selectedItem.getSelectedProfile() != null
+                    && workflowFacade.listProfiles(selectedItem.getEntityType()).stream()
+                            .anyMatch(candidate -> Objects.equals(candidate.id(),
+                                    selectedItem.getSelectedProfile().id()))) {
+                profile.setValue(selectedItem.getSelectedProfile());
+            } else {
+                profile.clear();
+            }
+            detailSummary.setText(selectedItem.getFileName() + " | " + selectedItem.getStatusText() + " | "
+                    + selectedItem.getRowSummary());
+            if (selectedItem.getPreviewSummary() != null && selectedItem.getPreviewSummary().exportCsv() != null) {
+                downloadAnchor.setHref(new StreamResource("normalized-" + selectedItem.getFileName(),
+                        () -> new ByteArrayInputStream(
+                                selectedItem.getPreviewSummary().exportCsv().getBytes(StandardCharsets.UTF_8))));
+                downloadAnchor.setVisible(true);
+            } else {
+                downloadAnchor.setVisible(false);
+            }
         } finally {
             syncingDetailFields = false;
         }
@@ -507,7 +518,8 @@ public class BatchImportView extends VerticalLayout {
             progressDetails.setVisible(true);
             progressBar.setIndeterminate(false);
             progressBar.setValue(snapshot.progressValue());
-            progressSummary.setText("Batch #" + snapshot.batchId() + " is " + snapshot.status() + " | " + snapshot.percentLabel());
+            progressSummary.setText(
+                    "Batch #" + snapshot.batchId() + " is " + snapshot.status() + " | " + snapshot.percentLabel());
             String currentWork = snapshot.currentFileName() == null
                     ? "Preparing work queue"
                     : snapshot.currentEntityLabel() + " | " + snapshot.currentFileName();
@@ -519,7 +531,8 @@ public class BatchImportView extends VerticalLayout {
                     + " | " + snapshot.startedLabel());
             refreshBatchRunRows();
             if (snapshot.status() != com.example.quickbooksimporter.domain.ImportBatchStatus.RUNNING) {
-                dependencySummary.setText("Batch " + snapshot.batchName() + " finished with status " + snapshot.status().name() + ".");
+                dependencySummary.setText(
+                        "Batch " + snapshot.batchName() + " finished with status " + snapshot.status().name() + ".");
                 trackingBatchId = null;
                 stopPollingIfIdle();
             }
@@ -538,7 +551,8 @@ public class BatchImportView extends VerticalLayout {
         if (snapshot.status() == AppJobStatus.QUEUED || snapshot.status() == AppJobStatus.RUNNING) {
             progressBar.setIndeterminate(false);
             progressBar.setValue(snapshot.progressValue());
-            progressSummary.setText(snapshot.description() + " is " + snapshot.status() + " | " + snapshot.percentLabel());
+            progressSummary
+                    .setText(snapshot.description() + " is " + snapshot.status() + " | " + snapshot.percentLabel());
             progressDetails.setText(snapshot.summaryMessage());
             return;
         }
@@ -553,7 +567,8 @@ public class BatchImportView extends VerticalLayout {
             stopPollingIfIdle();
             return;
         }
-        BatchValidationJobResult result = appJobService.readResult(snapshot.resultPayload(), BatchValidationJobResult.class);
+        BatchValidationJobResult result = appJobService.readResult(snapshot.resultPayload(),
+                BatchValidationJobResult.class);
         result.items().forEach(this::applyValidationResult);
         dependencySummary.setText(result.dependencyWarnings().isEmpty()
                 ? "All validations completed. Files with invalid rows remain blocked, valid independent files can run."
@@ -573,13 +588,18 @@ public class BatchImportView extends VerticalLayout {
                 .filter(item -> item.getPosition() == result.position())
                 .findFirst()
                 .ifPresent(item -> {
-                    ImportPreviewSummary summary = importPreviewJobCodec.toSummary(result.previewResult(), result.suggestedProfileName());
+                    ImportPreviewSummary summary = importPreviewJobCodec.toSummary(result.previewResult(),
+                            result.suggestedProfileName());
                     item.setPreviewSummary(summary);
                     item.setStatusText(summary.runStatusSummary(
-                            skipInvalidRows.getValue() ? com.example.quickbooksimporter.service.ImportExecutionMode.IMPORT_READY_ONLY
-                                    : com.example.quickbooksimporter.service.ImportExecutionMode.STRICT_ALL_ROWS).name());
-                    item.setRowSummary(summary.totalRows() + " total / " + summary.readyRows() + " ready / " + summary.invalidRows() + " invalid");
-                    item.setWarningText(summary.warnings().isEmpty() ? "Validated." : String.join(" | ", summary.warnings()));
+                            skipInvalidRows.getValue()
+                                    ? com.example.quickbooksimporter.service.ImportExecutionMode.IMPORT_READY_ONLY
+                                    : com.example.quickbooksimporter.service.ImportExecutionMode.STRICT_ALL_ROWS)
+                            .name());
+                    item.setRowSummary(summary.totalRows() + " total / " + summary.readyRows() + " ready / "
+                            + summary.invalidRows() + " invalid");
+                    item.setWarningText(
+                            summary.warnings().isEmpty() ? "Validated." : String.join(" | ", summary.warnings()));
                     if (item.getSelectedProfile() == null && result.suggestedProfileName() != null) {
                         workflowFacade.listProfiles(item.getEntityType()).stream()
                                 .filter(candidate -> candidate.name().equals(result.suggestedProfileName()))

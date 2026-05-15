@@ -336,7 +336,7 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
 
     @Override
     public List<QuickBooksBatchCreateResult> createBillsBatch(String realmId, List<NormalizedBill> bills) {
-        return executeBatchCreate(realmId, "Bill", bills, bill -> buildBillPayload(realmId, bill));
+        return executeBatchCreate(realmId, "Bill", bills, bill -> buildBillBatchPayload(realmId, bill));
     }
 
     @Override
@@ -528,7 +528,60 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
 
         java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
         payload.put("VendorRef", Map.of("value", vendorId));
-        payload.put("APAccountRef", Map.of("value", apAccountId));
+        payload.put("TxnDate", String.valueOf(bill.txnDate()));
+        if (bill.dueDate() != null) {
+            payload.put("DueDate", String.valueOf(bill.dueDate()));
+        }
+        payload.put("DocNumber", bill.billNo());
+        payload.put("Line", lines);
+        return payload;
+    }
+
+    /**
+     * Builds a Bill payload for batch create operations.
+     * Note: QBO Batch API does not support APAccountRef for Bill create.
+     * The AP account is determined from the Vendor's default settings.
+     */
+    Map<String, Object> buildBillBatchPayload(String realmId, NormalizedBill bill) {
+        String vendorId = findVendorId(realmId, bill.vendor());
+        if (vendorId == null) {
+            throw new IllegalStateException("Vendor not found in QuickBooks: " + bill.vendor());
+        }
+        java.util.List<java.util.Map<String, Object>> lines = new java.util.ArrayList<>();
+        for (BillLine line : bill.lines()) {
+            java.util.Map<String, Object> detail = new java.util.LinkedHashMap<>();
+            if (!StringUtils.isBlank(line.itemName())) {
+                String itemId = findItemId(realmId, line.itemName());
+                if (itemId == null) {
+                    throw new IllegalStateException("Item not found in QuickBooks: " + line.itemName());
+                }
+                detail.put("ItemRef", Map.of("value", itemId));
+                detail.put("Qty", line.quantity());
+                if (line.rate() != null) {
+                    detail.put("UnitPrice", line.rate());
+                }
+                lines.add(Map.of(
+                        "Amount", line.amount(),
+                        "Description", line.description() == null ? "" : line.description(),
+                        "DetailType", "ItemBasedExpenseLineDetail",
+                        "ItemBasedExpenseLineDetail", detail));
+            } else {
+                String categoryId = findAccountIdByName(realmId, line.category());
+                if (categoryId == null) {
+                    throw new IllegalStateException("Category not found in QuickBooks: " + line.category());
+                }
+                detail.put("AccountRef", Map.of("value", categoryId));
+                lines.add(Map.of(
+                        "Amount", line.amount(),
+                        "Description", line.description() == null ? "" : line.description(),
+                        "DetailType", "AccountBasedExpenseLineDetail",
+                        "AccountBasedExpenseLineDetail", detail));
+            }
+        }
+
+        java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("VendorRef", Map.of("value", vendorId));
+        // NOTE: APAccountRef is NOT included for batch create - QBO Batch API rejects it
         payload.put("TxnDate", String.valueOf(bill.txnDate()));
         if (bill.dueDate() != null) {
             payload.put("DueDate", String.valueOf(bill.dueDate()));
@@ -1179,10 +1232,10 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
     record BatchResponseEnvelope(BatchResponse response, String intuitTid) {
     }
 
-    record BatchItemRequest(@JsonAlias("bId") String bId,
-                            @JsonAlias("operation") String operation,
-                            @JsonAlias("payload") Map<String, Object> payload) {
-        @com.fasterxml.jackson.annotation.JsonAnyGetter
+    record BatchItemRequest(String bId,
+                            String operation,
+                            Map<String, Object> payload) {
+        @com.fasterxml.jackson.annotation.JsonValue
         Map<String, Object> json() {
             Map<String, Object> values = new LinkedHashMap<>();
             values.put("bId", bId);

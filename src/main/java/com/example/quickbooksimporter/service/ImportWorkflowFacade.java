@@ -204,6 +204,39 @@ public class ImportWorkflowFacade {
         };
     }
 
+    public Long preCreateRun(EntityType entityType,
+                             String fileName,
+                             String mappingProfileName,
+                             Object rawPreview,
+                             ImportExecutionOptions options) {
+        ImportExecutionOptions executionOptions = options == null ? ImportExecutionOptions.standalone() : options;
+        return switch (entityType) {
+            case INVOICE -> invoiceImportService.preCreateRun(fileName, mappingProfileName, (ImportPreview) rawPreview, executionOptions);
+            case PAYMENT -> paymentImportService.preCreateRun(fileName, mappingProfileName, (PaymentImportPreview) rawPreview, executionOptions);
+            case EXPENSE -> expenseImportService.preCreateRun(fileName, mappingProfileName, (ExpenseImportPreview) rawPreview, executionOptions);
+            case SALES_RECEIPT -> salesReceiptImportService.preCreateRun(fileName, mappingProfileName, (SalesReceiptImportPreview) rawPreview, executionOptions);
+            case BILL -> billImportService.preCreateRun(fileName, mappingProfileName, (BillImportPreview) rawPreview, executionOptions);
+            case BILL_PAYMENT -> billPaymentImportService.preCreateRun(fileName, mappingProfileName, (BillPaymentImportPreview) rawPreview, executionOptions);
+        };
+    }
+
+    public ImportExecutionResult executeWithRunId(Long runId,
+                                                    EntityType entityType,
+                                                    String fileName,
+                                                    String mappingProfileName,
+                                                    Object rawPreview,
+                                                    ImportExecutionOptions options) {
+        ImportExecutionOptions executionOptions = options == null ? ImportExecutionOptions.standalone() : options;
+        return switch (entityType) {
+            case INVOICE -> invoiceImportService.executeWithRunId(runId, fileName, mappingProfileName, (ImportPreview) rawPreview, executionOptions);
+            case PAYMENT -> paymentImportService.executeWithRunId(runId, fileName, mappingProfileName, (PaymentImportPreview) rawPreview, executionOptions);
+            case EXPENSE -> expenseImportService.executeWithRunId(runId, fileName, mappingProfileName, (ExpenseImportPreview) rawPreview, executionOptions);
+            case SALES_RECEIPT -> salesReceiptImportService.executeWithRunId(runId, fileName, mappingProfileName, (SalesReceiptImportPreview) rawPreview, executionOptions);
+            case BILL -> billImportService.executeWithRunId(runId, fileName, mappingProfileName, (BillImportPreview) rawPreview, executionOptions);
+            case BILL_PAYMENT -> billPaymentImportService.executeWithRunId(runId, fileName, mappingProfileName, (BillPaymentImportPreview) rawPreview, executionOptions);
+        };
+    }
+
     public Set<String> producedIdentifiers(EntityType entityType, Object rawPreview) {
         return switch (entityType) {
             case INVOICE -> ((ImportPreview) rawPreview).rows().stream()

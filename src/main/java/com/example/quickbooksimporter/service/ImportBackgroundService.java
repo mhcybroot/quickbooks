@@ -1,6 +1,7 @@
 package com.example.quickbooksimporter.service;
 
 import com.example.quickbooksimporter.domain.EntityType;
+import com.example.quickbooksimporter.persistence.ImportRunEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
@@ -15,36 +16,42 @@ public class ImportBackgroundService {
     private final CurrentCompanyService currentCompanyService;
 
     public ImportBackgroundService(ImportWorkflowFacade workflowFacade,
-                                   CurrentCompanyService currentCompanyService) {
+            CurrentCompanyService currentCompanyService) {
         this.workflowFacade = workflowFacade;
         this.currentCompanyService = currentCompanyService;
     }
 
-    public void enqueueForCurrentCompany(EntityType entityType,
-                                         String fileName,
-                                         String mappingProfileName,
-                                         Object rawPreview,
-                                         ImportExecutionOptions options) {
+    public Long enqueueForCurrentCompany(EntityType entityType,
+            String fileName,
+            String mappingProfileName,
+            Object rawPreview,
+            ImportExecutionOptions options) {
         Long companyId = currentCompanyService.requireCurrentCompanyId();
-        enqueue(entityType, fileName, mappingProfileName, rawPreview, options, companyId);
+        Long runId = workflowFacade.preCreateRun(entityType, fileName, mappingProfileName, rawPreview, options);
+        enqueue(runId, entityType, fileName, mappingProfileName, rawPreview, options, companyId);
+        return runId;
     }
 
     @Async("importTaskExecutor")
-    public void enqueue(EntityType entityType,
-                        String fileName,
-                        String mappingProfileName,
-                        Object rawPreview,
-                        ImportExecutionOptions options,
-                        Long companyId) {
+    public void enqueue(Long runId,
+            EntityType entityType,
+            String fileName,
+            String mappingProfileName,
+            Object rawPreview,
+            ImportExecutionOptions options,
+            Long companyId) {
         currentCompanyService.runWithCompanyContext(companyId, () -> {
             try {
-                log.info("Background import started: entityType={}, fileName={}, companyId={}", entityType, fileName, companyId);
-                ImportExecutionResult result = workflowFacade.execute(entityType, fileName, mappingProfileName, rawPreview, options);
-                log.info("Background import finished: entityType={}, fileName={}, companyId={}, runId={}, status={}",
-                        entityType, fileName, companyId, result.importRun() == null ? null : result.importRun().getId(),
+                log.info("Background import started: runId={}, entityType={}, fileName={}, companyId={}", runId,
+                        entityType, fileName, companyId);
+                ImportExecutionResult result = workflowFacade.executeWithRunId(runId, entityType, fileName,
+                        mappingProfileName, rawPreview, options);
+                log.info("Background import finished: runId={}, entityType={}, fileName={}, companyId={}, status={}",
+                        runId, entityType, fileName, companyId,
                         result.importRun() == null ? null : result.importRun().getStatus());
             } catch (Exception ex) {
-                log.error("Background import failed: entityType={}, fileName={}, companyId={}", entityType, fileName, companyId, ex);
+                log.error("Background import failed: runId={}, entityType={}, fileName={}, companyId={}", runId,
+                        entityType, fileName, companyId, ex);
             }
         });
     }
