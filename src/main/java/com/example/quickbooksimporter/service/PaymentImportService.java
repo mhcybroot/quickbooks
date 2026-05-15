@@ -53,14 +53,14 @@ public class PaymentImportService {
     }
 
     public PaymentImportPreview preview(String fileName, byte[] bytes, Map<NormalizedPaymentField, String> mapping) {
-        return preview(fileName, bytes, mapping, Map.of(), DateFormatOption.AUTO, PreviewProgressListener.noop());
+        return preview(fileName, bytes, mapping, Map.of(), DateFormatOption.AUTO, PreviewProgressListener.noop(), false);
     }
 
     public PaymentImportPreview preview(String fileName,
                                         byte[] bytes,
                                         Map<NormalizedPaymentField, String> mapping,
                                         Map<String, QuickBooksInvoiceRef> draftInvoiceRefs) {
-        return preview(fileName, bytes, mapping, draftInvoiceRefs, DateFormatOption.AUTO, PreviewProgressListener.noop());
+        return preview(fileName, bytes, mapping, draftInvoiceRefs, DateFormatOption.AUTO, PreviewProgressListener.noop(), false);
     }
 
     public PaymentImportPreview preview(String fileName,
@@ -68,7 +68,7 @@ public class PaymentImportService {
                                         Map<NormalizedPaymentField, String> mapping,
                                         Map<String, QuickBooksInvoiceRef> draftInvoiceRefs,
                                         DateFormatOption paymentDateFormat) {
-        return preview(fileName, bytes, mapping, draftInvoiceRefs, paymentDateFormat, PreviewProgressListener.noop());
+        return preview(fileName, bytes, mapping, draftInvoiceRefs, paymentDateFormat, PreviewProgressListener.noop(), false);
     }
 
     public PaymentImportPreview preview(String fileName,
@@ -76,7 +76,8 @@ public class PaymentImportService {
                                         Map<NormalizedPaymentField, String> mapping,
                                         Map<String, QuickBooksInvoiceRef> draftInvoiceRefs,
                                         DateFormatOption paymentDateFormat,
-                                        PreviewProgressListener progressListener) {
+                                        PreviewProgressListener progressListener,
+                                        boolean skipQuickBooksChecks) {
         ParsedCsvDocument document = parser.parse(new ByteArrayInputStream(bytes));
         Map<NormalizedPaymentField, String> finalMapping = new EnumMap<>(mapping);
         Map<String, BigDecimal> allocatedByInvoice = new HashMap<>();
@@ -88,7 +89,7 @@ public class PaymentImportService {
             listener.onProgress(0, totalRows, "Validated 0/" + totalRows + " payment rows");
         }
         for (var row : document.rows()) {
-            validations.add(validateRow(row, finalMapping, allocatedByInvoice, draftInvoiceRefs, paymentDateFormat));
+            validations.add(validateRow(row, finalMapping, allocatedByInvoice, draftInvoiceRefs, paymentDateFormat, skipQuickBooksChecks));
             completed++;
             listener.onProgress(completed, totalRows, "Validated " + completed + "/" + totalRows + " payment rows");
         }
@@ -293,7 +294,8 @@ public class PaymentImportService {
                                                    Map<NormalizedPaymentField, String> mapping,
                                                    Map<String, BigDecimal> allocatedByInvoice,
                                                    Map<String, QuickBooksInvoiceRef> draftInvoiceRefs,
-                                                   DateFormatOption paymentDateFormat) {
+                                                   DateFormatOption paymentDateFormat,
+                                                   boolean skipQuickBooksChecks) {
         try {
             NormalizedPayment payment = rowMapper.map(row, mapping, paymentDateFormat);
             String invoiceNo = payment == null || payment.application() == null ? null : payment.application().invoiceNo();
@@ -303,7 +305,8 @@ public class PaymentImportService {
                     row.values(),
                     payment,
                     alreadyAllocated,
-                    invoiceNo == null ? null : draftInvoiceRefs.get(invoiceNo));
+                    invoiceNo == null ? null : draftInvoiceRefs.get(invoiceNo),
+                    skipQuickBooksChecks);
             if (result.status() == ImportRowStatus.READY && invoiceNo != null && payment.application().appliedAmount() != null) {
                 allocatedByInvoice.merge(invoiceNo, payment.application().appliedAmount(), BigDecimal::add);
             }

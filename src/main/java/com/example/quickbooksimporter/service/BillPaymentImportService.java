@@ -46,21 +46,22 @@ public class BillPaymentImportService {
     }
 
     public BillPaymentImportPreview preview(String fileName, byte[] bytes, Map<NormalizedBillPaymentField, String> mapping) {
-        return preview(fileName, bytes, mapping, DateFormatOption.AUTO, PreviewProgressListener.noop());
+        return preview(fileName, bytes, mapping, DateFormatOption.AUTO, PreviewProgressListener.noop(), false);
     }
 
     public BillPaymentImportPreview preview(String fileName,
                                             byte[] bytes,
                                             Map<NormalizedBillPaymentField, String> mapping,
                                             DateFormatOption dateFormatOption) {
-        return preview(fileName, bytes, mapping, dateFormatOption, PreviewProgressListener.noop());
+        return preview(fileName, bytes, mapping, dateFormatOption, PreviewProgressListener.noop(), false);
     }
 
     public BillPaymentImportPreview preview(String fileName,
                                             byte[] bytes,
                                             Map<NormalizedBillPaymentField, String> mapping,
                                             DateFormatOption dateFormatOption,
-                                            PreviewProgressListener progressListener) {
+                                            PreviewProgressListener progressListener,
+                                            boolean skipQuickBooksChecks) {
         ParsedCsvDocument doc = parser.parse(new ByteArrayInputStream(bytes));
         Map<NormalizedBillPaymentField, String> finalMapping = new EnumMap<>(mapping);
         Map<String, BigDecimal> allocatedByBill = new HashMap<>();
@@ -73,7 +74,7 @@ public class BillPaymentImportService {
             listener.onProgress(0, totalRows, "Validated 0/" + totalRows + " bill payment rows");
         }
         for (var row : doc.rows()) {
-            validations.add(validateRow(row, finalMapping, allocatedByBill, effective));
+            validations.add(validateRow(row, finalMapping, allocatedByBill, effective, skipQuickBooksChecks));
             completed++;
             listener.onProgress(completed, totalRows, "Validated " + completed + "/" + totalRows + " bill payment rows");
         }
@@ -274,12 +275,13 @@ public class BillPaymentImportService {
     private BillPaymentRowValidationResult validateRow(com.example.quickbooksimporter.domain.ParsedCsvRow row,
                                                        Map<NormalizedBillPaymentField, String> mapping,
                                                        Map<String, BigDecimal> allocatedByBill,
-                                                       DateFormatOption dateFormatOption) {
+                                                       DateFormatOption dateFormatOption,
+                                                       boolean skipQuickBooksChecks) {
         try {
             NormalizedBillPayment payment = rowMapper.map(row, mapping, dateFormatOption);
             String billNo = payment == null || payment.application() == null ? null : payment.application().billNo();
             BigDecimal alreadyAllocated = billNo == null ? BigDecimal.ZERO : allocatedByBill.getOrDefault(billNo, BigDecimal.ZERO);
-            BillPaymentRowValidationResult result = validator.validate(row.rowNumber(), row.values(), payment, alreadyAllocated);
+            BillPaymentRowValidationResult result = validator.validate(row.rowNumber(), row.values(), payment, alreadyAllocated, skipQuickBooksChecks);
             if (result.status() == ImportRowStatus.READY && billNo != null && payment.application().appliedAmount() != null) {
                 allocatedByBill.merge(billNo, payment.application().appliedAmount(), BigDecimal::add);
             }

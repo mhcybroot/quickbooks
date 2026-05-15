@@ -20,7 +20,7 @@ public class InvoiceImportValidator {
         this.gateway = gateway;
     }
 
-    public RowValidationResult validate(int rowNumber, java.util.Map<String, String> rawData, NormalizedInvoice invoice) {
+    public RowValidationResult validate(int rowNumber, java.util.Map<String, String> rawData, NormalizedInvoice invoice, boolean skipQuickBooksChecks) {
         List<String> errors = new ArrayList<>();
         if (invoice == null) {
             errors.add("Invoice could not be parsed");
@@ -53,7 +53,7 @@ public class InvoiceImportValidator {
         String realmId = connectionService.getConnection()
                 .map(connection -> connection.getRealmId())
                 .orElse(null);
-        if (errors.isEmpty() && realmId != null) {
+        if (errors.isEmpty() && realmId != null && !skipQuickBooksChecks) {
             if (gateway.invoiceExists(realmId, invoice.invoiceNo())) {
                 errors.add("Invoice number already exists in QuickBooks");
             }

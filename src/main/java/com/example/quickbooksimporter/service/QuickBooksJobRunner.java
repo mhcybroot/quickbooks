@@ -80,7 +80,8 @@ public class QuickBooksJobRunner {
                                 request.invoiceMapping(),
                                 request.invoiceGroupingEnabled(),
                                 request.dateFormatOption(),
-                                progressListener),
+                                progressListener,
+                                request.skipQuickBooksChecks()),
                         List.of());
                 case PAYMENT -> importPreviewJobCodec.fromPaymentPreview(
                         paymentImportService.preview(
@@ -89,7 +90,8 @@ public class QuickBooksJobRunner {
                                 request.paymentMapping(),
                                 request.draftInvoiceRefs(),
                                 request.dateFormatOption(),
-                                progressListener),
+                                progressListener,
+                                request.skipQuickBooksChecks()),
                         List.of("Payments with invalid invoice references will be blocked."));
                 case EXPENSE -> importPreviewJobCodec.fromExpensePreview(
                         expenseImportService.preview(
@@ -97,7 +99,8 @@ public class QuickBooksJobRunner {
                                 request.fileBytes(),
                                 request.expenseMapping(),
                                 request.dateFormatOption(),
-                                progressListener),
+                                progressListener,
+                                request.skipQuickBooksChecks()),
                         List.of());
                 case SALES_RECEIPT -> importPreviewJobCodec.fromSalesReceiptPreview(
                         salesReceiptImportService.preview(
@@ -105,7 +108,8 @@ public class QuickBooksJobRunner {
                                 request.fileBytes(),
                                 request.salesReceiptMapping(),
                                 request.dateFormatOption(),
-                                progressListener),
+                                progressListener,
+                                request.skipQuickBooksChecks()),
                         List.of());
                 case BILL -> importPreviewJobCodec.fromBillPreview(
                         billImportService.preview(
@@ -122,7 +126,8 @@ public class QuickBooksJobRunner {
                                 request.fileBytes(),
                                 request.billPaymentMapping(),
                                 request.dateFormatOption(),
-                                progressListener),
+                                progressListener,
+                                request.skipQuickBooksChecks()),
                         List.of("Bill payments with missing bill references will be blocked."));
             };
             return new JobCompletion("Preview complete: " + result.readyRows() + " ready, " + result.invalidRows() + " invalid.", result);

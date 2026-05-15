@@ -87,6 +87,7 @@ public class BillPaymentImportView extends VerticalLayout {
     private List<String> currentHeaders = List.of();
     private BillPaymentImportPreview currentPreview;
     private boolean pollListenerRegistered;
+    private boolean autoImportOnPreviewComplete;
 
     public BillPaymentImportView(InvoiceCsvParser parser,
             BillPaymentMappingProfileService mappingProfileService,
@@ -210,10 +211,11 @@ public class BillPaymentImportView extends VerticalLayout {
         Button run = new Button("Import Bill Payments", e -> importPreview(ImportExecutionMode.STRICT_ALL_ROWS));
         Button runReadyOnly = new Button("Import Ready Rows Only",
                 e -> importPreview(ImportExecutionMode.IMPORT_READY_ONLY));
+        Button directImportButton = new Button("Import Ready Rows (Skip Validation)", e -> directImport());
         Button historyButton = new Button("Open History", e -> UI.getCurrent().navigate(ImportHistoryView.class));
         previewButton.addThemeName("primary");
         run.addThemeName("primary");
-        HorizontalLayout actions = new HorizontalLayout(previewButton, save, run, runReadyOnly, historyButton);
+        HorizontalLayout actions = new HorizontalLayout(previewButton, save, run, runReadyOnly, directImportButton, historyButton);
         actions.addClassName("corp-action-bar");
         add(UiComponents.card(UiComponents.sectionTitle("Stage 5: Execute"), actions));
     }
@@ -229,7 +231,7 @@ public class BillPaymentImportView extends VerticalLayout {
                 new QuickBooksJobService.ImportPreviewRequest(
                         uploadedFileName, uploadedBytes,
                         paymentDateFormat.getValue() == null ? DateFormatOption.AUTO : paymentDateFormat.getValue(),
-                        false, Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), currentMapping(), Map.of()))
+                        false, Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), currentMapping(), Map.of(), false))
                 .getId();
         summary.setText("Preview started in background. You can keep using the page while validation runs.");
         progressSummary.setText("Preview job is queued.");
@@ -238,6 +240,28 @@ public class BillPaymentImportView extends VerticalLayout {
         progressDetails.setVisible(true);
         progressBar.setIndeterminate(true);
         getUI().ifPresent(ui -> ui.setPollInterval(3000));
+    }
+
+    private void directImport() {
+        if (uploadedBytes == null) {
+            notifyWarning("Upload a CSV file first.");
+            return;
+        }
+        previewButton.setEnabled(false);
+        autoImportOnPreviewComplete = true;
+        previewJobId = quickBooksJobService.enqueueImportPreview(
+                EntityType.BILL_PAYMENT,
+                new QuickBooksJobService.ImportPreviewRequest(
+                        uploadedFileName, uploadedBytes,
+                        paymentDateFormat.getValue() == null ? DateFormatOption.AUTO : paymentDateFormat.getValue(),
+                        false, Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), currentMapping(), Map.of(), true))
+                .getId();
+        summary.setText("Mapping CSV... import will start immediately after.");
+        progressSummary.setText("Preparing fast import.");
+        progressBar.setVisible(true);
+        progressDetails.setVisible(true);
+        progressBar.setIndeterminate(true);
+        getUI().ifPresent(ui -> ui.setPollInterval(500));
     }
 
     private void saveProfile() {
@@ -370,6 +394,11 @@ public class BillPaymentImportView extends VerticalLayout {
         progressDetails.setText(snapshot.summaryMessage());
         previewJobId = null;
         stopPollingIfIdle();
+        
+        if (autoImportOnPreviewComplete) {
+            autoImportOnPreviewComplete = false;
+            importPreview(ImportExecutionMode.IMPORT_READY_ONLY);
+        }
     }
 
     private void stopPollingIfIdle() {

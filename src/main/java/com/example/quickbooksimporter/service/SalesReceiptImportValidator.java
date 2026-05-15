@@ -23,7 +23,8 @@ public class SalesReceiptImportValidator {
 
     public SalesReceiptRowValidationResult validate(int rowNumber,
                                                     Map<String, String> rawData,
-                                                    NormalizedSalesReceipt receipt) {
+                                                    NormalizedSalesReceipt receipt,
+                                                    boolean skipQuickBooksChecks) {
         List<String> errors = new ArrayList<>();
         if (receipt == null) {
             errors.add("Sales receipt could not be parsed");
@@ -53,7 +54,7 @@ public class SalesReceiptImportValidator {
         }
 
         String realmId = connectionService.getConnection().map(connection -> connection.getRealmId()).orElse(null);
-        if (errors.isEmpty() && realmId != null) {
+        if (errors.isEmpty() && realmId != null && !skipQuickBooksChecks) {
             if (!gateway.customerExists(realmId, receipt.customer())) {
                 errors.add("Customer not found in QuickBooks");
             }

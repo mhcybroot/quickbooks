@@ -21,13 +21,14 @@ public class BillPaymentImportValidator {
     }
 
     public BillPaymentRowValidationResult validate(int rowNumber, Map<String, String> rawData, NormalizedBillPayment payment) {
-        return validate(rowNumber, rawData, payment, BigDecimal.ZERO);
+        return validate(rowNumber, rawData, payment, BigDecimal.ZERO, false);
     }
 
     public BillPaymentRowValidationResult validate(int rowNumber,
                                                    Map<String, String> rawData,
                                                    NormalizedBillPayment payment,
-                                                   BigDecimal alreadyAllocatedInPreview) {
+                                                   BigDecimal alreadyAllocatedInPreview,
+                                                   boolean skipQuickBooksChecks) {
         List<String> errors = new ArrayList<>();
         if (payment == null) {
             errors.add("Bill payment could not be parsed");
@@ -48,7 +49,7 @@ public class BillPaymentImportValidator {
         }
 
         String realmId = connectionService.getConnection().map(c -> c.getRealmId()).orElse(null);
-        if (errors.isEmpty() && realmId != null) {
+        if (errors.isEmpty() && realmId != null && !skipQuickBooksChecks) {
             QuickBooksBillRef billRef = gateway.findBillByDocNumber(realmId, payment.application().billNo());
             if (billRef == null) errors.add("Bill not found in QuickBooks");
             else {

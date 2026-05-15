@@ -55,28 +55,30 @@ public class SalesReceiptImportService {
     }
 
     public SalesReceiptImportPreview preview(String fileName, byte[] bytes, Map<NormalizedSalesReceiptField, String> mapping) {
-        return preview(fileName, bytes, mapping, DateFormatOption.AUTO, PreviewProgressListener.noop());
+        return preview(fileName, bytes, mapping, DateFormatOption.AUTO, PreviewProgressListener.noop(), false);
     }
 
     public SalesReceiptImportPreview preview(String fileName,
                                              byte[] bytes,
                                              Map<NormalizedSalesReceiptField, String> mapping,
                                              DateFormatOption dateFormatOption) {
-        return preview(fileName, bytes, mapping, dateFormatOption, PreviewProgressListener.noop());
+        return preview(fileName, bytes, mapping, dateFormatOption, PreviewProgressListener.noop(), false);
     }
 
     public SalesReceiptImportPreview preview(String fileName,
                                              byte[] bytes,
                                              Map<NormalizedSalesReceiptField, String> mapping,
                                              DateFormatOption dateFormatOption,
-                                             PreviewProgressListener progressListener) {
+                                             PreviewProgressListener progressListener,
+                                             boolean skipQuickBooksChecks) {
         ParsedCsvDocument document = parser.parse(new ByteArrayInputStream(bytes));
         Map<NormalizedSalesReceiptField, String> finalMapping = new EnumMap<>(mapping);
         List<SalesReceiptRowValidationResult> validations = validateGrouped(
                 document,
                 finalMapping,
                 dateFormatOption == null ? DateFormatOption.AUTO : dateFormatOption,
-                progressListener == null ? PreviewProgressListener.noop() : progressListener);
+                progressListener == null ? PreviewProgressListener.noop() : progressListener,
+                skipQuickBooksChecks);
         List<SalesReceiptImportPreviewRow> rows = validations.stream()
                 .map(result -> new SalesReceiptImportPreviewRow(
                         result.rowNumber(),
@@ -279,7 +281,8 @@ public class SalesReceiptImportService {
     private List<SalesReceiptRowValidationResult> validateGrouped(ParsedCsvDocument document,
                                                                   Map<NormalizedSalesReceiptField, String> mapping,
                                                                   DateFormatOption dateFormatOption,
-                                                                  PreviewProgressListener progressListener) {
+                                                                  PreviewProgressListener progressListener,
+                                                                  boolean skipQuickBooksChecks) {
         Map<String, List<SalesReceiptRowMapper.SalesReceiptRowMapped>> groups = new HashMap<>();
         List<SalesReceiptRowValidationResult> failures = new ArrayList<>();
 
@@ -326,7 +329,7 @@ public class SalesReceiptImportService {
                     first.paymentMethod(),
                     first.depositAccount(),
                     lines);
-            SalesReceiptRowValidationResult validation = validator.validate(first.rowNumber(), first.rawData(), receipt);
+            SalesReceiptRowValidationResult validation = validator.validate(first.rowNumber(), first.rawData(), receipt, skipQuickBooksChecks);
             if (!groupErrors.isEmpty()) {
                 validation = new SalesReceiptRowValidationResult(
                         validation.rowNumber(),

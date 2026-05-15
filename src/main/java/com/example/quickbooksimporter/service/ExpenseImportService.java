@@ -51,21 +51,22 @@ public class ExpenseImportService {
     }
 
     public ExpenseImportPreview preview(String fileName, byte[] bytes, Map<NormalizedExpenseField, String> mapping) {
-        return preview(fileName, bytes, mapping, DateFormatOption.AUTO, PreviewProgressListener.noop());
+        return preview(fileName, bytes, mapping, DateFormatOption.AUTO, PreviewProgressListener.noop(), false);
     }
 
     public ExpenseImportPreview preview(String fileName,
                                         byte[] bytes,
                                         Map<NormalizedExpenseField, String> mapping,
                                         DateFormatOption dateFormatOption) {
-        return preview(fileName, bytes, mapping, dateFormatOption, PreviewProgressListener.noop());
+        return preview(fileName, bytes, mapping, dateFormatOption, PreviewProgressListener.noop(), false);
     }
 
     public ExpenseImportPreview preview(String fileName,
                                         byte[] bytes,
                                         Map<NormalizedExpenseField, String> mapping,
                                         DateFormatOption dateFormatOption,
-                                        PreviewProgressListener progressListener) {
+                                        PreviewProgressListener progressListener,
+                                        boolean skipQuickBooksChecks) {
         ParsedCsvDocument document = parser.parse(new ByteArrayInputStream(bytes));
         Map<NormalizedExpenseField, String> finalMapping = new EnumMap<>(mapping);
         DateFormatOption effective = dateFormatOption == null ? DateFormatOption.AUTO : dateFormatOption;
@@ -77,7 +78,7 @@ public class ExpenseImportService {
             listener.onProgress(0, totalRows, "Validated 0/" + totalRows + " expense rows");
         }
         for (var row : document.rows()) {
-            validations.add(validateRow(row, finalMapping, effective));
+            validations.add(validateRow(row, finalMapping, effective, skipQuickBooksChecks));
             completed++;
             listener.onProgress(completed, totalRows, "Validated " + completed + "/" + totalRows + " expense rows");
         }
@@ -281,9 +282,10 @@ public class ExpenseImportService {
 
     private ExpenseRowValidationResult validateRow(com.example.quickbooksimporter.domain.ParsedCsvRow row,
                                                    Map<NormalizedExpenseField, String> mapping,
-                                                   DateFormatOption dateFormatOption) {
+                                                   DateFormatOption dateFormatOption,
+                                                   boolean skipQuickBooksChecks) {
         try {
-            return validator.validate(row.rowNumber(), row.values(), rowMapper.map(row, mapping, dateFormatOption));
+            return validator.validate(row.rowNumber(), row.values(), rowMapper.map(row, mapping, dateFormatOption), skipQuickBooksChecks);
         } catch (Exception exception) {
             return new ExpenseRowValidationResult(row.rowNumber(), row, null, ImportRowStatus.INVALID, exception.getMessage(), row.values());
         }

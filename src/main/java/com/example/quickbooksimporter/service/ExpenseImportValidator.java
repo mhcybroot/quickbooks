@@ -20,7 +20,7 @@ public class ExpenseImportValidator {
         this.gateway = gateway;
     }
 
-    public ExpenseRowValidationResult validate(int rowNumber, Map<String, String> rawData, NormalizedExpense expense) {
+    public ExpenseRowValidationResult validate(int rowNumber, Map<String, String> rawData, NormalizedExpense expense, boolean skipQuickBooksChecks) {
         List<String> errors = new ArrayList<>();
         if (expense == null) {
             errors.add("Expense could not be parsed");
@@ -39,7 +39,7 @@ public class ExpenseImportValidator {
         }
 
         String realmId = connectionService.getConnection().map(connection -> connection.getRealmId()).orElse(null);
-        if (errors.isEmpty() && realmId != null) {
+        if (errors.isEmpty() && realmId != null && !skipQuickBooksChecks) {
             if (gateway.expenseExists(realmId, expense.vendor(), expense.txnDate(), expense.amount(), expense.referenceNo())) {
                 errors.add("Expense already exists in QuickBooks for vendor/date/amount/reference");
             }

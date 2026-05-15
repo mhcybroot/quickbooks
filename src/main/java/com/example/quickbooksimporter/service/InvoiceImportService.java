@@ -64,14 +64,14 @@ public class InvoiceImportService {
     }
 
     public ImportPreview preview(String fileName, byte[] bytes, Map<NormalizedInvoiceField, String> mapping) {
-        return preview(fileName, bytes, mapping, false, DateFormatOption.AUTO, PreviewProgressListener.noop());
+        return preview(fileName, bytes, mapping, false, DateFormatOption.AUTO, PreviewProgressListener.noop(), false);
     }
 
     public ImportPreview preview(String fileName,
                                  byte[] bytes,
                                  Map<NormalizedInvoiceField, String> mapping,
                                  boolean groupingEnabled) {
-        return preview(fileName, bytes, mapping, groupingEnabled, DateFormatOption.AUTO, PreviewProgressListener.noop());
+        return preview(fileName, bytes, mapping, groupingEnabled, DateFormatOption.AUTO, PreviewProgressListener.noop(), false);
     }
 
     public ImportPreview preview(String fileName,
@@ -79,7 +79,7 @@ public class InvoiceImportService {
                                  Map<NormalizedInvoiceField, String> mapping,
                                  boolean groupingEnabled,
                                  DateFormatOption dateFormatOption) {
-        return preview(fileName, bytes, mapping, groupingEnabled, dateFormatOption, PreviewProgressListener.noop());
+        return preview(fileName, bytes, mapping, groupingEnabled, dateFormatOption, PreviewProgressListener.noop(), false);
     }
 
     public ImportPreview preview(String fileName,
@@ -87,14 +87,15 @@ public class InvoiceImportService {
                                  Map<NormalizedInvoiceField, String> mapping,
                                  boolean groupingEnabled,
                                  DateFormatOption dateFormatOption,
-                                 PreviewProgressListener progressListener) {
+                                 PreviewProgressListener progressListener,
+                                 boolean skipQuickBooksChecks) {
         ParsedCsvDocument document = parser.parse(new ByteArrayInputStream(bytes));
         Map<NormalizedInvoiceField, String> finalMapping = new EnumMap<>(mapping);
         DateFormatOption effective = dateFormatOption == null ? DateFormatOption.AUTO : dateFormatOption;
         PreviewProgressListener listener = progressListener == null ? PreviewProgressListener.noop() : progressListener;
         List<RowValidationResult> validations = groupingEnabled
-                ? validateGrouped(document, finalMapping, effective, listener)
-                : validateUngrouped(document, finalMapping, effective, listener);
+                ? validateGrouped(document, finalMapping, effective, listener, skipQuickBooksChecks)
+                : validateUngrouped(document, finalMapping, effective, listener, skipQuickBooksChecks);
         List<ImportPreviewRow> rows = validations.stream()
                 .map(result -> new ImportPreviewRow(
                         result.rowNumber(),
@@ -322,9 +323,10 @@ public class InvoiceImportService {
 
     private RowValidationResult validateRow(com.example.quickbooksimporter.domain.ParsedCsvRow row,
                                             Map<NormalizedInvoiceField, String> mapping,
-                                            DateFormatOption dateFormatOption) {
+                                            DateFormatOption dateFormatOption,
+                                            boolean skipQuickBooksChecks) {
         try {
-            return validator.validate(row.rowNumber(), row.values(), rowMapper.map(row, mapping, dateFormatOption));
+            return validator.validate(row.rowNumber(), row.values(), rowMapper.map(row, mapping, dateFormatOption), skipQuickBooksChecks);
         } catch (Exception exception) {
             return new RowValidationResult(row.rowNumber(), row, null, ImportRowStatus.INVALID, exception.getMessage(), row.values());
         }
@@ -333,7 +335,8 @@ public class InvoiceImportService {
     private List<RowValidationResult> validateUngrouped(ParsedCsvDocument document,
                                                         Map<NormalizedInvoiceField, String> mapping,
                                                         DateFormatOption dateFormatOption,
-                                                        PreviewProgressListener progressListener) {
+                                                        PreviewProgressListener progressListener,
+                                                        boolean skipQuickBooksChecks) {
         List<RowValidationResult> validations = new ArrayList<>();
         int totalRows = document.rows().size();
         int completed = 0;
@@ -341,7 +344,7 @@ public class InvoiceImportService {
             progressListener.onProgress(0, totalRows, "Validated 0/" + totalRows + " invoice rows");
         }
         for (var row : document.rows()) {
-            validations.add(validateRow(row, mapping, dateFormatOption));
+            validations.add(validateRow(row, mapping, dateFormatOption, skipQuickBooksChecks));
             completed++;
             progressListener.onProgress(completed, totalRows, "Validated " + completed + "/" + totalRows + " invoice rows");
         }
@@ -351,7 +354,8 @@ public class InvoiceImportService {
     private List<RowValidationResult> validateGrouped(ParsedCsvDocument document,
                                                       Map<NormalizedInvoiceField, String> mapping,
                                                       DateFormatOption dateFormatOption,
-                                                      PreviewProgressListener progressListener) {
+                                                      PreviewProgressListener progressListener,
+                                                      boolean skipQuickBooksChecks) {
         Map<String, List<GroupedInvoiceSource>> groups = new HashMap<>();
         List<RowValidationResult> validations = new ArrayList<>();
         for (var row : document.rows()) {
@@ -395,7 +399,7 @@ public class InvoiceImportService {
                     first.invoice().location(),
                     first.invoice().memo(),
                     lines);
-            RowValidationResult validation = validator.validate(first.rowNumber(), first.rawData(), groupedInvoice);
+            RowValidationResult validation = validator.validate(first.rowNumber(), first.rawData(), groupedInvoice, skipQuickBooksChecks);
             if (!groupErrors.isEmpty()) {
                 validation = new RowValidationResult(
                         validation.rowNumber(),

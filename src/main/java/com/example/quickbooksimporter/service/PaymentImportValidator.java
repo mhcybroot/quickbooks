@@ -22,21 +22,22 @@ public class PaymentImportValidator {
     }
 
     public PaymentRowValidationResult validate(int rowNumber, Map<String, String> rawData, NormalizedPayment payment) {
-        return validate(rowNumber, rawData, payment, BigDecimal.ZERO, null);
+        return validate(rowNumber, rawData, payment, BigDecimal.ZERO, null, false);
     }
 
     public PaymentRowValidationResult validate(int rowNumber,
                                                Map<String, String> rawData,
                                                NormalizedPayment payment,
                                                BigDecimal alreadyAllocatedInPreview) {
-        return validate(rowNumber, rawData, payment, alreadyAllocatedInPreview, null);
+        return validate(rowNumber, rawData, payment, alreadyAllocatedInPreview, null, false);
     }
 
     public PaymentRowValidationResult validate(int rowNumber,
                                                Map<String, String> rawData,
                                                NormalizedPayment payment,
                                                BigDecimal alreadyAllocatedInPreview,
-                                               QuickBooksInvoiceRef draftInvoiceRef) {
+                                               QuickBooksInvoiceRef draftInvoiceRef,
+                                               boolean skipQuickBooksChecks) {
         List<String> errors = new ArrayList<>();
         if (payment == null) {
             errors.add("Payment could not be parsed");
@@ -69,7 +70,7 @@ public class PaymentImportValidator {
         }
 
         String realmId = connectionService.getConnection().map(connection -> connection.getRealmId()).orElse(null);
-        if (errors.isEmpty() && realmId != null) {
+        if (errors.isEmpty() && realmId != null && !skipQuickBooksChecks) {
             QuickBooksInvoiceRef invoiceRef = draftInvoiceRef != null
                     ? draftInvoiceRef
                     : gateway.findInvoiceByDocNumber(realmId, payment.application().invoiceNo());
