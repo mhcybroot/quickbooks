@@ -109,7 +109,8 @@ public class QuickBooksJobService {
             Map<NormalizedSalesReceiptField, String> salesReceiptMapping,
             Map<NormalizedBillField, String> billMapping,
             Map<NormalizedBillPaymentField, String> billPaymentMapping,
-            Map<String, QuickBooksInvoiceRef> draftInvoiceRefs) {
+            Map<String, QuickBooksInvoiceRef> draftInvoiceRefs,
+            boolean skipQuickBooksChecks) {
     }
 
     public record BatchValidationItemRequest(

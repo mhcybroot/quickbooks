@@ -20,7 +20,7 @@ public class BillImportValidator {
         this.gateway = gateway;
     }
 
-    public BillRowValidationResult validate(int rowNumber, Map<String, String> rawData, NormalizedBill bill) {
+    public BillRowValidationResult validate(int rowNumber, Map<String, String> rawData, NormalizedBill bill, boolean skipQuickBooksChecks) {
         List<String> errors = new ArrayList<>();
         if (bill == null) errors.add("Bill could not be parsed");
         else {
@@ -39,7 +39,7 @@ public class BillImportValidator {
         }
 
         String realmId = connectionService.getConnection().map(c -> c.getRealmId()).orElse(null);
-        if (errors.isEmpty() && realmId != null) {
+        if (errors.isEmpty() && realmId != null && !skipQuickBooksChecks) {
             if (gateway.billExistsByDocNumber(realmId, bill.billNo())) errors.add("Bill number already exists in QuickBooks");
             if (gateway.findAccountIdByName(realmId, bill.apAccount()) == null) errors.add("AP account not found in QuickBooks");
             for (BillLine line : bill.lines()) {

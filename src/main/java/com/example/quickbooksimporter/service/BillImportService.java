@@ -48,28 +48,30 @@ public class BillImportService {
     }
 
     public BillImportPreview preview(String fileName, byte[] bytes, Map<NormalizedBillField, String> mapping) {
-        return preview(fileName, bytes, mapping, DateFormatOption.AUTO, PreviewProgressListener.noop());
+        return preview(fileName, bytes, mapping, DateFormatOption.AUTO, PreviewProgressListener.noop(), false);
     }
 
     public BillImportPreview preview(String fileName,
                                      byte[] bytes,
                                      Map<NormalizedBillField, String> mapping,
                                      DateFormatOption dateFormatOption) {
-        return preview(fileName, bytes, mapping, dateFormatOption, PreviewProgressListener.noop());
+        return preview(fileName, bytes, mapping, dateFormatOption, PreviewProgressListener.noop(), false);
     }
 
     public BillImportPreview preview(String fileName,
                                      byte[] bytes,
                                      Map<NormalizedBillField, String> mapping,
                                      DateFormatOption dateFormatOption,
-                                     PreviewProgressListener progressListener) {
+                                     PreviewProgressListener progressListener,
+                                     boolean skipQuickBooksChecks) {
         ParsedCsvDocument doc = parser.parse(new ByteArrayInputStream(bytes));
         Map<NormalizedBillField, String> finalMapping = new EnumMap<>(mapping);
         List<BillRowValidationResult> validations = validateGrouped(
                 doc,
                 finalMapping,
                 dateFormatOption == null ? DateFormatOption.AUTO : dateFormatOption,
-                progressListener == null ? PreviewProgressListener.noop() : progressListener);
+                progressListener == null ? PreviewProgressListener.noop() : progressListener,
+                skipQuickBooksChecks);
         List<BillImportPreviewRow> rows = validations.stream().map(v -> new BillImportPreviewRow(
                 v.rowNumber(),
                 v.bill() == null ? "" : v.bill().billNo(),
@@ -272,7 +274,8 @@ public class BillImportService {
     private List<BillRowValidationResult> validateGrouped(ParsedCsvDocument doc,
                                                           Map<NormalizedBillField, String> mapping,
                                                           DateFormatOption dateFormatOption,
-                                                          PreviewProgressListener progressListener) {
+                                                          PreviewProgressListener progressListener,
+                                                          boolean skipQuickBooksChecks) {
         Map<String, List<BillRowMapper.BillRowMapped>> groups = new HashMap<>();
         List<BillRowValidationResult> validations = new ArrayList<>();
         for (var row : doc.rows()) {
@@ -302,7 +305,7 @@ public class BillImportService {
                 lines.add(r.line());
             }
             NormalizedBill bill = new NormalizedBill(first.billNo(), first.vendor(), first.txnDate(), first.dueDate(), first.apAccount(), lines);
-            BillRowValidationResult v = validator.validate(first.rowNumber(), first.rawData(), bill);
+            BillRowValidationResult v = validator.validate(first.rowNumber(), first.rawData(), bill, skipQuickBooksChecks);
             if (!gErrors.isEmpty()) {
                 v = new BillRowValidationResult(v.rowNumber(), v.parsedRow(), v.bill(), ImportRowStatus.INVALID, v.message() + "; " + String.join("; ", gErrors), v.rawData());
             }

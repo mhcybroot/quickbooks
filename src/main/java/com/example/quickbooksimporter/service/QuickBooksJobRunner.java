@@ -113,7 +113,8 @@ public class QuickBooksJobRunner {
                                 request.fileBytes(),
                                 request.billMapping(),
                                 request.dateFormatOption(),
-                                progressListener),
+                                progressListener,
+                                request.skipQuickBooksChecks()),
                         List.of("Bills with line grouping problems will be blocked."));
                 case BILL_PAYMENT -> importPreviewJobCodec.fromBillPaymentPreview(
                         billPaymentImportService.preview(
