@@ -530,7 +530,9 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
         payload.put("VendorRef", Map.of("value", vendorId));
         payload.put("APAccountRef", Map.of("value", apAccountId));
         payload.put("TxnDate", String.valueOf(bill.txnDate()));
-        payload.put("DueDate", bill.dueDate() == null ? null : String.valueOf(bill.dueDate()));
+        if (bill.dueDate() != null) {
+            payload.put("DueDate", String.valueOf(bill.dueDate()));
+        }
         payload.put("DocNumber", bill.billNo());
         payload.put("Line", lines);
         return payload;
@@ -566,6 +568,10 @@ public class QuickBooksApiGateway implements QuickBooksGateway {
             return List.of();
         }
         List<Map<String, Object>> payloads = requests.stream().map(payloadBuilder).toList();
+        if (log.isDebugEnabled()) {
+            log.debug("Batch create payloads for realmId={}, entityType={}, count={}: {}",
+                    realmId, entityName, payloads.size(), payloads);
+        }
         List<List<BatchItemRequest>> chunks = buildCreateBatchChunks(entityName, payloads);
         List<QuickBooksBatchCreateResult> results = new ArrayList<>(requests.size());
         int offset = 0;
