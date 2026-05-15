@@ -244,7 +244,7 @@ class InvoiceImportServiceTest {
         assertThat(saveSnapshots).anySatisfy(snapshot -> {
             assertThat(snapshot.attemptedRows()).isEqualTo(2);
             assertThat(snapshot.skippedRows()).isEqualTo(4);
-            assertThat(snapshot.importedRows()).isEqualTo(1);
+            assertThat(snapshot.importedRows()).isEqualTo(2);
             assertThat(snapshot.completedAt()).isNull();
         });
     }

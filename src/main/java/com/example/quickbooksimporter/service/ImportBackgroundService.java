@@ -4,6 +4,7 @@ import com.example.quickbooksimporter.domain.EntityType;
 import com.example.quickbooksimporter.persistence.ImportRunEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -14,11 +15,14 @@ public class ImportBackgroundService {
 
     private final ImportWorkflowFacade workflowFacade;
     private final CurrentCompanyService currentCompanyService;
+    private final ImportBackgroundService self;
 
     public ImportBackgroundService(ImportWorkflowFacade workflowFacade,
-            CurrentCompanyService currentCompanyService) {
+            CurrentCompanyService currentCompanyService,
+            @Lazy ImportBackgroundService self) {
         this.workflowFacade = workflowFacade;
         this.currentCompanyService = currentCompanyService;
+        this.self = self;
     }
 
     public Long enqueueForCurrentCompany(EntityType entityType,
@@ -28,7 +32,7 @@ public class ImportBackgroundService {
             ImportExecutionOptions options) {
         Long companyId = currentCompanyService.requireCurrentCompanyId();
         Long runId = workflowFacade.preCreateRun(entityType, fileName, mappingProfileName, rawPreview, options);
-        enqueue(runId, entityType, fileName, mappingProfileName, rawPreview, options, companyId);
+        self.enqueue(runId, entityType, fileName, mappingProfileName, rawPreview, options, companyId);
         return runId;
     }
 

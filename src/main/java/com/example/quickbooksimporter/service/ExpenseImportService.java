@@ -93,12 +93,10 @@ public class ExpenseImportService {
         return new ExpenseImportPreview(fileName, finalMapping, document.headers(), rows, validations);
     }
 
-    @Transactional
     public ImportExecutionResult execute(String fileName, String mappingProfileName, ExpenseImportPreview preview) {
         return execute(fileName, mappingProfileName, preview, ImportExecutionOptions.standalone());
     }
 
-    @Transactional
     public ImportExecutionResult execute(String fileName,
                                          String mappingProfileName,
                                          ExpenseImportPreview preview,
@@ -137,86 +135,8 @@ public class ExpenseImportService {
         applyExecutionOptions(run, options);
         run = importRunRepository.save(run);
 
-        int processedSinceFlush = 0;
-        Instant lastFlushAt = Instant.now();
-        List<PreparedExpenseCreate> prepared = new ArrayList<>();
-        for (ExpenseRowValidationResult validation : preview.validations()) {
-            ImportRowResultEntity rowEntity = buildRow(run, validation);
-            if (mode == ImportExecutionMode.IMPORT_READY_ONLY && validation.status() != ImportRowStatus.READY) {
-                rowEntity.setStatus(ImportRowStatus.SKIPPED);
-                rowEntity.setMessage("Skipped because row is not READY.");
-                run.getRowResults().add(rowEntity);
-                skipped++;
-                processedSinceFlush++;
-                ImportRunProgressFlusher.ProgressFlushResult flushResult = flushProgress(
-                        run, attempted, skipped, imported, processedSinceFlush, lastFlushAt);
-                lastFlushAt = flushResult.lastFlushAt();
-                if (flushResult.flushed()) {
-                    processedSinceFlush = 0;
-                }
-                continue;
-            }
-            run.getRowResults().add(rowEntity);
-            attempted++;
-            try {
-                NormalizedExpense expense = validation.expense();
-                quickBooksGateway.ensureVendor(realmId, expense.vendor());
-                quickBooksGateway.ensureExpenseCategory(realmId, expense.category());
-                prepared.add(new PreparedExpenseCreate(expense, rowEntity));
-            } catch (Exception exception) {
-                rowEntity.setStatus(ImportRowStatus.FAILED);
-                rowEntity.setMessage(exception.getMessage());
-                failed++;
-                processedSinceFlush++;
-                ImportRunProgressFlusher.ProgressFlushResult flushResult = flushProgress(
-                        run, attempted, skipped, imported, processedSinceFlush, lastFlushAt);
-                lastFlushAt = flushResult.lastFlushAt();
-                if (flushResult.flushed()) {
-                    processedSinceFlush = 0;
-                }
-            }
-        }
-        if (!prepared.isEmpty()) {
-            List<QuickBooksBatchCreateResult> results = quickBooksGateway.createExpensesBatch(
-                    realmId,
-                    prepared.stream().map(PreparedExpenseCreate::expense).toList());
-            for (int index = 0; index < prepared.size(); index++) {
-                PreparedExpenseCreate item = prepared.get(index);
-                QuickBooksBatchCreateResult result = results.get(index);
-                if (result.success()) {
-                    item.row().setStatus(ImportRowStatus.IMPORTED);
-                    item.row().setCreatedEntityId(result.entityId());
-                    String label = result.referenceNumber() == null ? item.expense().referenceNo() : result.referenceNumber();
-                    item.row().setMessage("Imported as QuickBooks expense " + label);
-                    imported++;
-                } else {
-                    item.row().setStatus(ImportRowStatus.FAILED);
-                    item.row().setMessage(result.message());
-                    failed++;
-                }
-                processedSinceFlush++;
-                ImportRunProgressFlusher.ProgressFlushResult flushResult = flushProgress(
-                        run, attempted, skipped, imported, processedSinceFlush, lastFlushAt);
-                lastFlushAt = flushResult.lastFlushAt();
-                if (flushResult.flushed()) {
-                    processedSinceFlush = 0;
-                }
-            }
-        }
-        run.setTotalRows(preview.rows().size());
-        run.setValidRows((int) readyRows);
-        run.setInvalidRows((int) preview.validations().stream().filter(result -> result.status() == ImportRowStatus.INVALID).count());
-        run.setDuplicateRows((int) preview.validations().stream().filter(result -> result.status() == ImportRowStatus.DUPLICATE).count());
-        run.setAttemptedRows(attempted);
-        run.setSkippedRows(skipped);
-        run.setImportedRows(imported);
-        run.setStatus(failed == 0 && skipped == 0 ? ImportRunStatus.IMPORTED : ImportRunStatus.PARTIAL_FAILURE);
-        run.setCompletedAt(Instant.now());
-        ImportRunEntity saved = importRunRepository.save(run);
-        String message = failed == 0 && skipped == 0
-                ? "Imported " + imported + " expenses."
-                : "Imported " + imported + " ready expenses; skipped " + skipped + " rows; " + failed + " failed during import. Check Import History for details.";
-        return new ImportExecutionResult(saved, failed == 0, message);
+        run = importRunRepository.save(run);
+        return doExecute(run, realmId, preview, mode);
     }
 
     @Transactional
@@ -255,7 +175,6 @@ public class ExpenseImportService {
         return run.getId();
     }
 
-    @Transactional
     public ImportExecutionResult executeWithRunId(Long runId,
                                                   String fileName,
                                                   String mappingProfileName,
@@ -264,76 +183,85 @@ public class ExpenseImportService {
         ImportRunEntity run = importRunRepository.findById(runId)
                 .orElseThrow(() -> new IllegalArgumentException("Import run not found: " + runId));
         String realmId = connectionService.getActiveConnection().getRealmId();
+        return doExecute(run, realmId, preview, executionMode(options));
+    }
+
+    private ImportExecutionResult doExecute(ImportRunEntity run,
+                                            String realmId,
+                                            ExpenseImportPreview preview,
+                                            ImportExecutionMode mode) {
         int imported = 0;
         int attempted = 0;
         int skipped = 0;
         int failed = 0;
         int processedSinceFlush = 0;
         Instant lastFlushAt = Instant.now();
-        List<PreparedExpenseCreate> prepared = new ArrayList<>();
-        for (ExpenseRowValidationResult validation : preview.validations()) {
-            ImportRowResultEntity rowEntity = buildRow(run, validation);
-            if (validation.status() != ImportRowStatus.READY) {
-                rowEntity.setStatus(ImportRowStatus.SKIPPED);
-                rowEntity.setMessage("Skipped because row is not READY.");
+
+        List<ExpenseRowValidationResult> validations = preview.validations();
+        for (int i = 0; i < validations.size(); i += 20) {
+            List<ExpenseRowValidationResult> chunk = validations.subList(i, Math.min(validations.size(), i + 20));
+            List<PreparedExpenseCreate> prepared = new ArrayList<>();
+            for (ExpenseRowValidationResult validation : chunk) {
+                ImportRowResultEntity rowEntity = buildRow(run, validation);
                 run.getRowResults().add(rowEntity);
-                skipped++;
-                processedSinceFlush++;
-                ImportRunProgressFlusher.ProgressFlushResult flushResult = flushProgress(
-                        run, attempted, skipped, imported, processedSinceFlush, lastFlushAt);
-                lastFlushAt = flushResult.lastFlushAt();
-                if (flushResult.flushed()) {
-                    processedSinceFlush = 0;
-                }
-                continue;
-            }
-            run.getRowResults().add(rowEntity);
-            attempted++;
-            try {
-                NormalizedExpense expense = validation.expense();
-                quickBooksGateway.ensureVendor(realmId, expense.vendor());
-                quickBooksGateway.ensureExpenseCategory(realmId, expense.category());
-                prepared.add(new PreparedExpenseCreate(expense, rowEntity));
-            } catch (Exception exception) {
-                rowEntity.setStatus(ImportRowStatus.FAILED);
-                rowEntity.setMessage(exception.getMessage());
-                failed++;
-                processedSinceFlush++;
-                ImportRunProgressFlusher.ProgressFlushResult flushResult = flushProgress(
-                        run, attempted, skipped, imported, processedSinceFlush, lastFlushAt);
-                lastFlushAt = flushResult.lastFlushAt();
-                if (flushResult.flushed()) {
-                    processedSinceFlush = 0;
-                }
-            }
-        }
-        if (!prepared.isEmpty()) {
-            List<QuickBooksBatchCreateResult> results = quickBooksGateway.createExpensesBatch(
-                    realmId,
-                    prepared.stream().map(PreparedExpenseCreate::expense).toList());
-            for (int index = 0; index < prepared.size(); index++) {
-                PreparedExpenseCreate item = prepared.get(index);
-                QuickBooksBatchCreateResult result = results.get(index);
-                if (result.success()) {
-                    item.row().setStatus(ImportRowStatus.IMPORTED);
-                    item.row().setCreatedEntityId(result.entityId());
-                    String label = result.referenceNumber() == null ? item.expense().referenceNo() : result.referenceNumber();
-                    item.row().setMessage("Imported as QuickBooks expense " + label);
-                    imported++;
+                if (mode == ImportExecutionMode.IMPORT_READY_ONLY && validation.status() != ImportRowStatus.READY) {
+                    rowEntity.setStatus(ImportRowStatus.SKIPPED);
+                    rowEntity.setMessage("Skipped because row is not READY.");
+                    skipped++;
+                    processedSinceFlush++;
                 } else {
-                    item.row().setStatus(ImportRowStatus.FAILED);
-                    item.row().setMessage(result.message());
-                    failed++;
+                    attempted++;
+                    try {
+                        NormalizedExpense expense = validation.expense();
+                        quickBooksGateway.ensureVendor(realmId, expense.vendor());
+                        quickBooksGateway.ensureExpenseCategory(realmId, expense.category());
+                        prepared.add(new PreparedExpenseCreate(expense, rowEntity));
+                    } catch (Exception exception) {
+                        rowEntity.setStatus(ImportRowStatus.FAILED);
+                        rowEntity.setMessage(exception.getMessage());
+                        failed++;
+                    }
+                    processedSinceFlush++;
                 }
-                processedSinceFlush++;
-                ImportRunProgressFlusher.ProgressFlushResult flushResult = flushProgress(
+                
+                ImportRunProgressFlusher.ProgressFlushResult prepFlushResult = flushProgress(
                         run, attempted, skipped, imported, processedSinceFlush, lastFlushAt);
-                lastFlushAt = flushResult.lastFlushAt();
-                if (flushResult.flushed()) {
+                lastFlushAt = prepFlushResult.lastFlushAt();
+                if (prepFlushResult.flushed()) {
                     processedSinceFlush = 0;
                 }
             }
+
+            if (!prepared.isEmpty()) {
+                List<QuickBooksBatchCreateResult> results = quickBooksGateway.createExpensesBatch(
+                        realmId,
+                        prepared.stream().map(PreparedExpenseCreate::expense).toList());
+                for (int index = 0; index < prepared.size(); index++) {
+                    PreparedExpenseCreate item = prepared.get(index);
+                    QuickBooksBatchCreateResult result = results.get(index);
+                    if (result.success()) {
+                        item.row().setStatus(ImportRowStatus.IMPORTED);
+                        item.row().setCreatedEntityId(result.entityId());
+                        String label = result.referenceNumber() == null ? item.expense().referenceNo() : result.referenceNumber();
+                        item.row().setMessage("Imported as QuickBooks expense " + label);
+                        imported++;
+                    } else {
+                        item.row().setStatus(ImportRowStatus.FAILED);
+                        item.row().setMessage(result.message());
+                        failed++;
+                    }
+                    processedSinceFlush++;
+                }
+            }
+
+            ImportRunProgressFlusher.ProgressFlushResult flushResult = flushProgress(
+                    run, attempted, skipped, imported, 5, lastFlushAt);
+            lastFlushAt = flushResult.lastFlushAt();
+            if (flushResult.flushed()) {
+                processedSinceFlush = 0;
+            }
         }
+
         long readyRows = preview.validations().stream().filter(result -> result.status() == ImportRowStatus.READY).count();
         run.setTotalRows(preview.rows().size());
         run.setValidRows((int) readyRows);

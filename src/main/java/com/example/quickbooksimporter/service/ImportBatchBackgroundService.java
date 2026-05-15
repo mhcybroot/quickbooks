@@ -4,6 +4,7 @@ import com.example.quickbooksimporter.persistence.ImportBatchEntity;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -14,17 +15,20 @@ public class ImportBatchBackgroundService {
 
     private final ImportBatchService importBatchService;
     private final CurrentCompanyService currentCompanyService;
+    private final ImportBatchBackgroundService self;
 
     public ImportBatchBackgroundService(ImportBatchService importBatchService,
-            CurrentCompanyService currentCompanyService) {
+            CurrentCompanyService currentCompanyService,
+            @Lazy ImportBatchBackgroundService self) {
         this.importBatchService = importBatchService;
         this.currentCompanyService = currentCompanyService;
+        this.self = self;
     }
 
     public ImportBatchEntity enqueueForCurrentCompany(Long batchId, List<ImportBatchService.BatchFileRequest> files) {
         Long companyId = currentCompanyService.requireCurrentCompanyId();
         ImportBatchEntity prepared = importBatchService.prepareBatchExecution(batchId, files);
-        enqueue(batchId, files, companyId);
+        self.enqueue(batchId, files, companyId);
         return prepared;
     }
 
