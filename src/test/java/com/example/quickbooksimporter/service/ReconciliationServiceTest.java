@@ -50,15 +50,12 @@ class ReconciliationServiceTest {
     @BeforeEach
     void setUp() {
         service = new ReconciliationService(parser, connectionService, gateway, sessionRepository, currentCompanyService);
-        when(currentCompanyService.requireCurrentCompanyId()).thenReturn(1L);
         QboConnectionEntity connection = new QboConnectionEntity();
         connection.setRealmId("realm-1");
         connection.setConnectedAt(Instant.now());
         connection.setUpdatedAt(Instant.now());
         connection.setExpiresAt(Instant.now().plusSeconds(3600));
         when(connectionService.getActiveConnection()).thenReturn(connection);
-        CompanyEntity company = new CompanyEntity();
-        when(currentCompanyService.requireCurrentCompany()).thenReturn(company);
     }
 
     @Test
@@ -77,6 +74,8 @@ class ReconciliationServiceTest {
                 List.of(new ParsedCsvRow(2, row1), new ParsedCsvRow(3, row2)));
         when(parser.parse(any())).thenReturn(document);
 
+        CompanyEntity company = new CompanyEntity();
+        when(currentCompanyService.requireCurrentCompany()).thenReturn(company);
         when(gateway.listReconciliationCandidates(eq("realm-1"), any(), any())).thenReturn(List.of(
                 new QboReconCandidate("txn-1", "0", "Payment", LocalDate.of(2026, 8, 1), new BigDecimal("120.00"), "ABC-100", "Acme", "")));
 
@@ -116,6 +115,8 @@ class ReconciliationServiceTest {
                 List.of(new ParsedCsvRow(2, row)));
         when(parser.parse(any())).thenReturn(document);
 
+        CompanyEntity company = new CompanyEntity();
+        when(currentCompanyService.requireCurrentCompany()).thenReturn(company);
         when(gateway.listReconciliationCandidates(eq("realm-1"), any(), any())).thenReturn(List.of(
                 new QboReconCandidate("txn-z", "0", "Payment", LocalDate.of(2026, 8, 2), new BigDecimal("120.00"), "", "FINARA PROPERTY SOLUTIONS LLC", "Conf# uscwy55g0")));
 
@@ -170,6 +171,7 @@ class ReconciliationServiceTest {
         row.setBatchMatch(false);
         session.getRows().add(row);
 
+        when(currentCompanyService.requireCurrentCompanyId()).thenReturn(1L);
         when(sessionRepository.findByIdAndCompanyId(21L, 1L)).thenReturn(Optional.of(session));
         when(gateway.markTransactionReconciled(eq("realm-1"), any(), any()))
                 .thenReturn(new QuickBooksReconcileMarkResult(true, "ok", "tid-1"));

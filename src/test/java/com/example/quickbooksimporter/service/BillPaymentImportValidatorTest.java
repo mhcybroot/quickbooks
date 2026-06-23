@@ -47,8 +47,8 @@ class BillPaymentImportValidatorTest {
 
     @Test
     void allowsPartialBillPaymentsThatSumToOpenBalance() {
-        var first = validator.validate(1, Map.of(), payment("BPV3-001", LocalDate.of(2026, 7, 14), "140.00"), BigDecimal.ZERO);
-        var second = validator.validate(2, Map.of(), payment("BPV3-002", LocalDate.of(2026, 7, 18), "140.00"), new BigDecimal("140.00"));
+        var first = validator.validate(1, java.util.Collections.emptyMap(), payment("BPV3-001", LocalDate.of(2026, 7, 14), "140.00"), BigDecimal.ZERO);
+        var second = validator.validate(2, java.util.Collections.emptyMap(), payment("BPV3-002", LocalDate.of(2026, 7, 18), "140.00"), new BigDecimal("140.00"));
 
         assertEquals(ImportRowStatus.READY, first.status());
         assertEquals(ImportRowStatus.READY, second.status());
