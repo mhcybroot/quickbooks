@@ -48,8 +48,8 @@ class PaymentImportValidatorTest {
                 .thenReturn(new QuickBooksInvoiceRef("1", "INV-270101", "C1", "Evergreen Foods V3", new BigDecimal("450.00")));
         when(gateway.paymentExistsByReference("realm-1", "Evergreen Foods V3", LocalDate.of(2026, 7, 6), "RPV3-EVG-001")).thenReturn(false);
         when(gateway.paymentExistsByReference("realm-1", "Evergreen Foods V3", LocalDate.of(2026, 7, 12), "RPV3-EVG-002")).thenReturn(false);
-        var first = validator.validate(1, java.util.Collections.emptyMap(), payment("RPV3-EVG-001", LocalDate.of(2026, 7, 6), "250.00"), BigDecimal.ZERO);
-        var second = validator.validate(2, java.util.Collections.emptyMap(), payment("RPV3-EVG-002", LocalDate.of(2026, 7, 12), "200.00"), new BigDecimal("250.00"));
+        var first = validator.validate(1, java.util.Collections.<String, String>emptyMap(), payment("RPV3-EVG-001", LocalDate.of(2026, 7, 6), "250.00"), BigDecimal.ZERO);
+        var second = validator.validate(2, java.util.Collections.<String, String>emptyMap(), payment("RPV3-EVG-002", LocalDate.of(2026, 7, 12), "200.00"), new BigDecimal("250.00"));
 
         assertEquals(ImportRowStatus.READY, first.status());
         assertEquals(ImportRowStatus.READY, second.status());
@@ -60,7 +60,7 @@ class PaymentImportValidatorTest {
         when(gateway.findInvoiceByDocNumber("realm-1", "INV-270101"))
                 .thenReturn(new QuickBooksInvoiceRef("1", "INV-270101", "C1", "Evergreen Foods V3", new BigDecimal("450.00")));
         when(gateway.paymentExistsByReference("realm-1", "Evergreen Foods V3", LocalDate.of(2026, 7, 14), "RPV3-EVG-003")).thenReturn(false);
-        var result = validator.validate(3, java.util.Collections.emptyMap(), payment("RPV3-EVG-003", LocalDate.of(2026, 7, 14), "250.00"), new BigDecimal("250.00"));
+        var result = validator.validate(3, java.util.Collections.<String, String>emptyMap(), payment("RPV3-EVG-003", LocalDate.of(2026, 7, 14), "250.00"), new BigDecimal("250.00"));
 
         assertEquals(ImportRowStatus.INVALID, result.status());
         assertEquals("Applied amount exceeds invoice open balance", result.message());
@@ -71,7 +71,7 @@ class PaymentImportValidatorTest {
         when(gateway.paymentExistsByReference("realm-1", "Evergreen Foods V3", LocalDate.of(2026, 7, 6), "RPV3-DRAFT-001")).thenReturn(false);
         var result = validator.validate(
                 1,
-                java.util.Collections.emptyMap(),
+                java.util.Collections.<String, String>emptyMap(),
                 draftPayment("RPV3-DRAFT-001", LocalDate.of(2026, 7, 6), "250.00", "INV-DRAFT-100"),
                 BigDecimal.ZERO,
                 new QuickBooksInvoiceRef("draft-1", "INV-DRAFT-100", "C1", "Evergreen Foods V3", new BigDecimal("450.00")));

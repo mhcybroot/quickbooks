@@ -35,7 +35,7 @@ class InvoiceImportValidatorTest {
         InvoiceImportValidator validator = new InvoiceImportValidator(connectionService, gateway);
         NormalizedInvoice invoice = invoice("INV-1", false, BigDecimal.ZERO);
 
-        var result = validator.validate(2, java.util.Collections.singletonMap("*InvoiceNo", "INV-1"), invoice);
+        var result = validator.validate(2, java.util.Collections.<String, String>singletonMap("*InvoiceNo", "INV-1"), invoice);
 
         assertThat(result.status()).isEqualTo(ImportRowStatus.INVALID);
         assertThat(result.message()).contains("already exists");
@@ -50,7 +50,7 @@ class InvoiceImportValidatorTest {
         InvoiceImportValidator validator = new InvoiceImportValidator(connectionService, gateway);
         NormalizedInvoice invoice = invoice("INV-2", true, new BigDecimal("5"));
 
-        var result = validator.validate(3, java.util.Collections.singletonMap("*InvoiceNo", "INV-2"), invoice);
+        var result = validator.validate(3, java.util.Collections.<String, String>singletonMap("*InvoiceNo", "INV-2"), invoice);
 
         assertThat(result.status()).isEqualTo(ImportRowStatus.INVALID);
         assertThat(result.message()).contains("not supported");
